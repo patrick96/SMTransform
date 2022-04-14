@@ -5,278 +5,538 @@
 #![allow(unused_imports)]
 #![allow(unused_variables)]
 use antlr_rust::atn::ATN;
+use antlr_rust::atn_deserializer::ATNDeserializer;
 use antlr_rust::char_stream::CharStream;
+use antlr_rust::dfa::DFA;
+use antlr_rust::error_listener::ErrorListener;
 use antlr_rust::int_stream::IntStream;
 use antlr_rust::lexer::{BaseLexer, Lexer, LexerRecog};
-use antlr_rust::atn_deserializer::ATNDeserializer;
-use antlr_rust::dfa::DFA;
-use antlr_rust::lexer_atn_simulator::{LexerATNSimulator, ILexerATNSimulator};
-use antlr_rust::PredictionContextCache;
-use antlr_rust::recognizer::{Recognizer,Actions};
-use antlr_rust::error_listener::ErrorListener;
-use antlr_rust::TokenSource;
-use antlr_rust::token_factory::{TokenFactory,CommonTokenFactory,TokenAware};
+use antlr_rust::lexer_atn_simulator::{ILexerATNSimulator, LexerATNSimulator};
+use antlr_rust::parser_rule_context::{cast, BaseParserRuleContext, ParserRuleContext};
+use antlr_rust::recognizer::{Actions, Recognizer};
+use antlr_rust::rule_context::{BaseRuleContext, EmptyContext, EmptyCustomRuleContext};
 use antlr_rust::token::*;
-use antlr_rust::rule_context::{BaseRuleContext,EmptyCustomRuleContext,EmptyContext};
-use antlr_rust::parser_rule_context::{ParserRuleContext,BaseParserRuleContext,cast};
-use antlr_rust::vocabulary::{Vocabulary,VocabularyImpl};
+use antlr_rust::token_factory::{CommonTokenFactory, TokenAware, TokenFactory};
+use antlr_rust::vocabulary::{Vocabulary, VocabularyImpl};
+use antlr_rust::PredictionContextCache;
+use antlr_rust::TokenSource;
 
-use antlr_rust::{lazy_static,Tid,TidAble,TidExt};
+use antlr_rust::{lazy_static, Tid, TidAble, TidExt};
 
-use std::sync::Arc;
 use std::cell::RefCell;
-use std::rc::Rc;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
+use std::rc::Rc;
+use std::sync::Arc;
 
+pub const Comment: isize = 1;
+pub const ParOpen: isize = 2;
+pub const ParClose: isize = 3;
+pub const Semicolon: isize = 4;
+pub const String: isize = 5;
+pub const QuotedSymbol: isize = 6;
+pub const PS_Not: isize = 7;
+pub const PS_Bool: isize = 8;
+pub const PS_ContinuedExecution: isize = 9;
+pub const PS_Error: isize = 10;
+pub const PS_False: isize = 11;
+pub const PS_ImmediateExit: isize = 12;
+pub const PS_Incomplete: isize = 13;
+pub const PS_Logic: isize = 14;
+pub const PS_Memout: isize = 15;
+pub const PS_Sat: isize = 16;
+pub const PS_Success: isize = 17;
+pub const PS_Theory: isize = 18;
+pub const PS_True: isize = 19;
+pub const PS_Unknown: isize = 20;
+pub const PS_Unsupported: isize = 21;
+pub const PS_Unsat: isize = 22;
+pub const CMD_Assert: isize = 23;
+pub const CMD_CheckSat: isize = 24;
+pub const CMD_CheckSatAssuming: isize = 25;
+pub const CMD_DeclareConst: isize = 26;
+pub const CMD_DeclareDatatype: isize = 27;
+pub const CMD_DeclareDatatypes: isize = 28;
+pub const CMD_DeclareFun: isize = 29;
+pub const CMD_DeclareSort: isize = 30;
+pub const CMD_DefineFun: isize = 31;
+pub const CMD_DefineFunRec: isize = 32;
+pub const CMD_DefineFunsRec: isize = 33;
+pub const CMD_DefineSort: isize = 34;
+pub const CMD_Echo: isize = 35;
+pub const CMD_Exit: isize = 36;
+pub const CMD_GetAssertions: isize = 37;
+pub const CMD_GetAssignment: isize = 38;
+pub const CMD_GetInfo: isize = 39;
+pub const CMD_GetModel: isize = 40;
+pub const CMD_GetOption: isize = 41;
+pub const CMD_GetProof: isize = 42;
+pub const CMD_GetUnsatAssumptions: isize = 43;
+pub const CMD_GetUnsatCore: isize = 44;
+pub const CMD_GetValue: isize = 45;
+pub const CMD_Pop: isize = 46;
+pub const CMD_Push: isize = 47;
+pub const CMD_Reset: isize = 48;
+pub const CMD_ResetAssertions: isize = 49;
+pub const CMD_SetInfo: isize = 50;
+pub const CMD_SetLogic: isize = 51;
+pub const CMD_SetOption: isize = 52;
+pub const GRW_Exclamation: isize = 53;
+pub const GRW_Underscore: isize = 54;
+pub const GRW_As: isize = 55;
+pub const GRW_Binary: isize = 56;
+pub const GRW_Decimal: isize = 57;
+pub const GRW_Exists: isize = 58;
+pub const GRW_Hexadecimal: isize = 59;
+pub const GRW_Forall: isize = 60;
+pub const GRW_Let: isize = 61;
+pub const GRW_Match: isize = 62;
+pub const GRW_Numeral: isize = 63;
+pub const GRW_Par: isize = 64;
+pub const GRW_String: isize = 65;
+pub const Numeral: isize = 66;
+pub const Binary: isize = 67;
+pub const HexDecimal: isize = 68;
+pub const Decimal: isize = 69;
+pub const Colon: isize = 70;
+pub const PK_AllStatistics: isize = 71;
+pub const PK_AssertionStackLevels: isize = 72;
+pub const PK_Authors: isize = 73;
+pub const PK_Category: isize = 74;
+pub const PK_Chainable: isize = 75;
+pub const PK_Definition: isize = 76;
+pub const PK_DiagnosticOutputChannel: isize = 77;
+pub const PK_ErrorBehaviour: isize = 78;
+pub const PK_Extension: isize = 79;
+pub const PK_Funs: isize = 80;
+pub const PK_FunsDescription: isize = 81;
+pub const PK_GlobalDeclarations: isize = 82;
+pub const PK_InteractiveMode: isize = 83;
+pub const PK_Language: isize = 84;
+pub const PK_LeftAssoc: isize = 85;
+pub const PK_License: isize = 86;
+pub const PK_Named: isize = 87;
+pub const PK_Name: isize = 88;
+pub const PK_Notes: isize = 89;
+pub const PK_Pattern: isize = 90;
+pub const PK_PrintSuccess: isize = 91;
+pub const PK_ProduceAssertions: isize = 92;
+pub const PK_ProduceAssignments: isize = 93;
+pub const PK_ProduceModels: isize = 94;
+pub const PK_ProduceProofs: isize = 95;
+pub const PK_ProduceUnsatAssumptions: isize = 96;
+pub const PK_ProduceUnsatCores: isize = 97;
+pub const PK_RandomSeed: isize = 98;
+pub const PK_ReasonUnknown: isize = 99;
+pub const PK_RegularOutputChannel: isize = 100;
+pub const PK_ReproducibleResourceLimit: isize = 101;
+pub const PK_RightAssoc: isize = 102;
+pub const PK_SmtLibVersion: isize = 103;
+pub const PK_Sorts: isize = 104;
+pub const PK_SortsDescription: isize = 105;
+pub const PK_Source: isize = 106;
+pub const PK_Status: isize = 107;
+pub const PK_Theories: isize = 108;
+pub const PK_Values: isize = 109;
+pub const PK_Verbosity: isize = 110;
+pub const PK_Version: isize = 111;
+pub const UndefinedSymbol: isize = 112;
+pub const WS: isize = 113;
+pub const channelNames: [&'static str; 0 + 2] = ["DEFAULT_TOKEN_CHANNEL", "HIDDEN"];
 
-	pub const Comment:isize=1;
-	pub const ParOpen:isize=2;
-	pub const ParClose:isize=3;
-	pub const Semicolon:isize=4;
-	pub const String:isize=5;
-	pub const QuotedSymbol:isize=6;
-	pub const PS_Not:isize=7;
-	pub const PS_Bool:isize=8;
-	pub const PS_ContinuedExecution:isize=9;
-	pub const PS_Error:isize=10;
-	pub const PS_False:isize=11;
-	pub const PS_ImmediateExit:isize=12;
-	pub const PS_Incomplete:isize=13;
-	pub const PS_Logic:isize=14;
-	pub const PS_Memout:isize=15;
-	pub const PS_Sat:isize=16;
-	pub const PS_Success:isize=17;
-	pub const PS_Theory:isize=18;
-	pub const PS_True:isize=19;
-	pub const PS_Unknown:isize=20;
-	pub const PS_Unsupported:isize=21;
-	pub const PS_Unsat:isize=22;
-	pub const CMD_Assert:isize=23;
-	pub const CMD_CheckSat:isize=24;
-	pub const CMD_CheckSatAssuming:isize=25;
-	pub const CMD_DeclareConst:isize=26;
-	pub const CMD_DeclareDatatype:isize=27;
-	pub const CMD_DeclareDatatypes:isize=28;
-	pub const CMD_DeclareFun:isize=29;
-	pub const CMD_DeclareSort:isize=30;
-	pub const CMD_DefineFun:isize=31;
-	pub const CMD_DefineFunRec:isize=32;
-	pub const CMD_DefineFunsRec:isize=33;
-	pub const CMD_DefineSort:isize=34;
-	pub const CMD_Echo:isize=35;
-	pub const CMD_Exit:isize=36;
-	pub const CMD_GetAssertions:isize=37;
-	pub const CMD_GetAssignment:isize=38;
-	pub const CMD_GetInfo:isize=39;
-	pub const CMD_GetModel:isize=40;
-	pub const CMD_GetOption:isize=41;
-	pub const CMD_GetProof:isize=42;
-	pub const CMD_GetUnsatAssumptions:isize=43;
-	pub const CMD_GetUnsatCore:isize=44;
-	pub const CMD_GetValue:isize=45;
-	pub const CMD_Pop:isize=46;
-	pub const CMD_Push:isize=47;
-	pub const CMD_Reset:isize=48;
-	pub const CMD_ResetAssertions:isize=49;
-	pub const CMD_SetInfo:isize=50;
-	pub const CMD_SetLogic:isize=51;
-	pub const CMD_SetOption:isize=52;
-	pub const GRW_Exclamation:isize=53;
-	pub const GRW_Underscore:isize=54;
-	pub const GRW_As:isize=55;
-	pub const GRW_Binary:isize=56;
-	pub const GRW_Decimal:isize=57;
-	pub const GRW_Exists:isize=58;
-	pub const GRW_Hexadecimal:isize=59;
-	pub const GRW_Forall:isize=60;
-	pub const GRW_Let:isize=61;
-	pub const GRW_Match:isize=62;
-	pub const GRW_Numeral:isize=63;
-	pub const GRW_Par:isize=64;
-	pub const GRW_String:isize=65;
-	pub const Numeral:isize=66;
-	pub const Binary:isize=67;
-	pub const HexDecimal:isize=68;
-	pub const Decimal:isize=69;
-	pub const Colon:isize=70;
-	pub const PK_AllStatistics:isize=71;
-	pub const PK_AssertionStackLevels:isize=72;
-	pub const PK_Authors:isize=73;
-	pub const PK_Category:isize=74;
-	pub const PK_Chainable:isize=75;
-	pub const PK_Definition:isize=76;
-	pub const PK_DiagnosticOutputChannel:isize=77;
-	pub const PK_ErrorBehaviour:isize=78;
-	pub const PK_Extension:isize=79;
-	pub const PK_Funs:isize=80;
-	pub const PK_FunsDescription:isize=81;
-	pub const PK_GlobalDeclarations:isize=82;
-	pub const PK_InteractiveMode:isize=83;
-	pub const PK_Language:isize=84;
-	pub const PK_LeftAssoc:isize=85;
-	pub const PK_License:isize=86;
-	pub const PK_Named:isize=87;
-	pub const PK_Name:isize=88;
-	pub const PK_Notes:isize=89;
-	pub const PK_Pattern:isize=90;
-	pub const PK_PrintSuccess:isize=91;
-	pub const PK_ProduceAssertions:isize=92;
-	pub const PK_ProduceAssignments:isize=93;
-	pub const PK_ProduceModels:isize=94;
-	pub const PK_ProduceProofs:isize=95;
-	pub const PK_ProduceUnsatAssumptions:isize=96;
-	pub const PK_ProduceUnsatCores:isize=97;
-	pub const PK_RandomSeed:isize=98;
-	pub const PK_ReasonUnknown:isize=99;
-	pub const PK_RegularOutputChannel:isize=100;
-	pub const PK_ReproducibleResourceLimit:isize=101;
-	pub const PK_RightAssoc:isize=102;
-	pub const PK_SmtLibVersion:isize=103;
-	pub const PK_Sorts:isize=104;
-	pub const PK_SortsDescription:isize=105;
-	pub const PK_Source:isize=106;
-	pub const PK_Status:isize=107;
-	pub const PK_Theories:isize=108;
-	pub const PK_Values:isize=109;
-	pub const PK_Verbosity:isize=110;
-	pub const PK_Version:isize=111;
-	pub const UndefinedSymbol:isize=112;
-	pub const WS:isize=113;
-	pub const channelNames: [&'static str;0+2] = [
-		"DEFAULT_TOKEN_CHANNEL", "HIDDEN"
-	];
+pub const modeNames: [&'static str; 1] = ["DEFAULT_MODE"];
 
-	pub const modeNames: [&'static str;1] = [
-		"DEFAULT_MODE"
-	];
+pub const ruleNames: [&'static str; 122] = [
+    "Comment",
+    "ParOpen",
+    "ParClose",
+    "Semicolon",
+    "String",
+    "QuotedSymbol",
+    "PS_Not",
+    "PS_Bool",
+    "PS_ContinuedExecution",
+    "PS_Error",
+    "PS_False",
+    "PS_ImmediateExit",
+    "PS_Incomplete",
+    "PS_Logic",
+    "PS_Memout",
+    "PS_Sat",
+    "PS_Success",
+    "PS_Theory",
+    "PS_True",
+    "PS_Unknown",
+    "PS_Unsupported",
+    "PS_Unsat",
+    "CMD_Assert",
+    "CMD_CheckSat",
+    "CMD_CheckSatAssuming",
+    "CMD_DeclareConst",
+    "CMD_DeclareDatatype",
+    "CMD_DeclareDatatypes",
+    "CMD_DeclareFun",
+    "CMD_DeclareSort",
+    "CMD_DefineFun",
+    "CMD_DefineFunRec",
+    "CMD_DefineFunsRec",
+    "CMD_DefineSort",
+    "CMD_Echo",
+    "CMD_Exit",
+    "CMD_GetAssertions",
+    "CMD_GetAssignment",
+    "CMD_GetInfo",
+    "CMD_GetModel",
+    "CMD_GetOption",
+    "CMD_GetProof",
+    "CMD_GetUnsatAssumptions",
+    "CMD_GetUnsatCore",
+    "CMD_GetValue",
+    "CMD_Pop",
+    "CMD_Push",
+    "CMD_Reset",
+    "CMD_ResetAssertions",
+    "CMD_SetInfo",
+    "CMD_SetLogic",
+    "CMD_SetOption",
+    "GRW_Exclamation",
+    "GRW_Underscore",
+    "GRW_As",
+    "GRW_Binary",
+    "GRW_Decimal",
+    "GRW_Exists",
+    "GRW_Hexadecimal",
+    "GRW_Forall",
+    "GRW_Let",
+    "GRW_Match",
+    "GRW_Numeral",
+    "GRW_Par",
+    "GRW_String",
+    "Numeral",
+    "Binary",
+    "HexDecimal",
+    "Decimal",
+    "HexDigit",
+    "Colon",
+    "Digit",
+    "Sym",
+    "BinaryDigit",
+    "PrintableChar",
+    "PrintableCharNoDquote",
+    "PrintableCharNoBackslash",
+    "EscapedSpace",
+    "WhiteSpaceChar",
+    "PK_AllStatistics",
+    "PK_AssertionStackLevels",
+    "PK_Authors",
+    "PK_Category",
+    "PK_Chainable",
+    "PK_Definition",
+    "PK_DiagnosticOutputChannel",
+    "PK_ErrorBehaviour",
+    "PK_Extension",
+    "PK_Funs",
+    "PK_FunsDescription",
+    "PK_GlobalDeclarations",
+    "PK_InteractiveMode",
+    "PK_Language",
+    "PK_LeftAssoc",
+    "PK_License",
+    "PK_Named",
+    "PK_Name",
+    "PK_Notes",
+    "PK_Pattern",
+    "PK_PrintSuccess",
+    "PK_ProduceAssertions",
+    "PK_ProduceAssignments",
+    "PK_ProduceModels",
+    "PK_ProduceProofs",
+    "PK_ProduceUnsatAssumptions",
+    "PK_ProduceUnsatCores",
+    "PK_RandomSeed",
+    "PK_ReasonUnknown",
+    "PK_RegularOutputChannel",
+    "PK_ReproducibleResourceLimit",
+    "PK_RightAssoc",
+    "PK_SmtLibVersion",
+    "PK_Sorts",
+    "PK_SortsDescription",
+    "PK_Source",
+    "PK_Status",
+    "PK_Theories",
+    "PK_Values",
+    "PK_Verbosity",
+    "PK_Version",
+    "UndefinedSymbol",
+    "WS",
+];
 
-	pub const ruleNames: [&'static str;122] = [
-		"Comment", "ParOpen", "ParClose", "Semicolon", "String", "QuotedSymbol",
-		"PS_Not", "PS_Bool", "PS_ContinuedExecution", "PS_Error", "PS_False",
-		"PS_ImmediateExit", "PS_Incomplete", "PS_Logic", "PS_Memout", "PS_Sat",
-		"PS_Success", "PS_Theory", "PS_True", "PS_Unknown", "PS_Unsupported",
-		"PS_Unsat", "CMD_Assert", "CMD_CheckSat", "CMD_CheckSatAssuming", "CMD_DeclareConst",
-		"CMD_DeclareDatatype", "CMD_DeclareDatatypes", "CMD_DeclareFun", "CMD_DeclareSort",
-		"CMD_DefineFun", "CMD_DefineFunRec", "CMD_DefineFunsRec", "CMD_DefineSort",
-		"CMD_Echo", "CMD_Exit", "CMD_GetAssertions", "CMD_GetAssignment", "CMD_GetInfo",
-		"CMD_GetModel", "CMD_GetOption", "CMD_GetProof", "CMD_GetUnsatAssumptions",
-		"CMD_GetUnsatCore", "CMD_GetValue", "CMD_Pop", "CMD_Push", "CMD_Reset",
-		"CMD_ResetAssertions", "CMD_SetInfo", "CMD_SetLogic", "CMD_SetOption",
-		"GRW_Exclamation", "GRW_Underscore", "GRW_As", "GRW_Binary", "GRW_Decimal",
-		"GRW_Exists", "GRW_Hexadecimal", "GRW_Forall", "GRW_Let", "GRW_Match",
-		"GRW_Numeral", "GRW_Par", "GRW_String", "Numeral", "Binary", "HexDecimal",
-		"Decimal", "HexDigit", "Colon", "Digit", "Sym", "BinaryDigit", "PrintableChar",
-		"PrintableCharNoDquote", "PrintableCharNoBackslash", "EscapedSpace", "WhiteSpaceChar",
-		"PK_AllStatistics", "PK_AssertionStackLevels", "PK_Authors", "PK_Category",
-		"PK_Chainable", "PK_Definition", "PK_DiagnosticOutputChannel", "PK_ErrorBehaviour",
-		"PK_Extension", "PK_Funs", "PK_FunsDescription", "PK_GlobalDeclarations",
-		"PK_InteractiveMode", "PK_Language", "PK_LeftAssoc", "PK_License", "PK_Named",
-		"PK_Name", "PK_Notes", "PK_Pattern", "PK_PrintSuccess", "PK_ProduceAssertions",
-		"PK_ProduceAssignments", "PK_ProduceModels", "PK_ProduceProofs", "PK_ProduceUnsatAssumptions",
-		"PK_ProduceUnsatCores", "PK_RandomSeed", "PK_ReasonUnknown", "PK_RegularOutputChannel",
-		"PK_ReproducibleResourceLimit", "PK_RightAssoc", "PK_SmtLibVersion", "PK_Sorts",
-		"PK_SortsDescription", "PK_Source", "PK_Status", "PK_Theories", "PK_Values",
-		"PK_Verbosity", "PK_Version", "UndefinedSymbol", "WS"
-	];
+pub const _LITERAL_NAMES: [Option<&'static str>; 112] = [
+    None,
+    None,
+    Some("'('"),
+    Some("')'"),
+    Some("';'"),
+    None,
+    None,
+    Some("'not'"),
+    Some("'Bool'"),
+    Some("'continued-execution'"),
+    Some("'error'"),
+    Some("'false'"),
+    Some("'immediate-exit'"),
+    Some("'incomplete'"),
+    Some("'logic'"),
+    Some("'memout'"),
+    Some("'sat'"),
+    Some("'success'"),
+    Some("'theory'"),
+    Some("'true'"),
+    Some("'unknown'"),
+    Some("'unsupported'"),
+    Some("'unsat'"),
+    Some("'assert'"),
+    Some("'check-sat'"),
+    Some("'check-sat-assuming'"),
+    Some("'declare-const'"),
+    Some("'declare-datatype'"),
+    Some("'declare-datatypes'"),
+    Some("'declare-fun'"),
+    Some("'declare-sort'"),
+    Some("'define-fun'"),
+    Some("'define-fun-rec'"),
+    Some("'define-funs-rec'"),
+    Some("'define-sort'"),
+    Some("'echo'"),
+    Some("'exit'"),
+    Some("'get-assertions'"),
+    Some("'get-assignment'"),
+    Some("'get-info'"),
+    Some("'get-model'"),
+    Some("'get-option'"),
+    Some("'get-proof'"),
+    Some("'get-unsat-assumptions'"),
+    Some("'get-unsat-core'"),
+    Some("'get-value'"),
+    Some("'pop'"),
+    Some("'push'"),
+    Some("'reset'"),
+    Some("'reset-assertions'"),
+    Some("'set-info'"),
+    Some("'set-logic'"),
+    Some("'set-option'"),
+    Some("'!'"),
+    Some("'_'"),
+    Some("'as'"),
+    Some("'BINARY'"),
+    Some("'DECIMAL'"),
+    Some("'exists'"),
+    Some("'HEXADECIMAL'"),
+    Some("'forall'"),
+    Some("'let'"),
+    Some("'match'"),
+    Some("'NUMERAL'"),
+    Some("'par'"),
+    Some("'string'"),
+    None,
+    None,
+    None,
+    None,
+    Some("':'"),
+    Some("':all-statistics'"),
+    Some("':assertion-stack-levels'"),
+    Some("':authors'"),
+    Some("':category'"),
+    Some("':chainable'"),
+    Some("':definition'"),
+    Some("':diagnostic-output-channel'"),
+    Some("':error-behavior'"),
+    Some("':extensions'"),
+    Some("':funs'"),
+    Some("':funs-description'"),
+    Some("':global-declarations'"),
+    Some("':interactive-mode'"),
+    Some("':language'"),
+    Some("':left-assoc'"),
+    Some("':license'"),
+    Some("':named'"),
+    Some("':name'"),
+    Some("':notes'"),
+    Some("':pattern'"),
+    Some("':print-success'"),
+    Some("':produce-assertions'"),
+    Some("':produce-assignments'"),
+    Some("':produce-models'"),
+    Some("':produce-proofs'"),
+    Some("':produce-unsat-assumptions'"),
+    Some("':produce-unsat-cores'"),
+    Some("':random-seed'"),
+    Some("':reason-unknown'"),
+    Some("':regular-output-channel'"),
+    Some("':reproducible-resource-limit'"),
+    Some("':right-assoc'"),
+    Some("':smt-lib-version'"),
+    Some("':sorts'"),
+    Some("':sorts-description'"),
+    Some("':source'"),
+    Some("':status'"),
+    Some("':theories'"),
+    Some("':values'"),
+    Some("':verbosity'"),
+    Some("':version'"),
+];
+pub const _SYMBOLIC_NAMES: [Option<&'static str>; 114] = [
+    None,
+    Some("Comment"),
+    Some("ParOpen"),
+    Some("ParClose"),
+    Some("Semicolon"),
+    Some("String"),
+    Some("QuotedSymbol"),
+    Some("PS_Not"),
+    Some("PS_Bool"),
+    Some("PS_ContinuedExecution"),
+    Some("PS_Error"),
+    Some("PS_False"),
+    Some("PS_ImmediateExit"),
+    Some("PS_Incomplete"),
+    Some("PS_Logic"),
+    Some("PS_Memout"),
+    Some("PS_Sat"),
+    Some("PS_Success"),
+    Some("PS_Theory"),
+    Some("PS_True"),
+    Some("PS_Unknown"),
+    Some("PS_Unsupported"),
+    Some("PS_Unsat"),
+    Some("CMD_Assert"),
+    Some("CMD_CheckSat"),
+    Some("CMD_CheckSatAssuming"),
+    Some("CMD_DeclareConst"),
+    Some("CMD_DeclareDatatype"),
+    Some("CMD_DeclareDatatypes"),
+    Some("CMD_DeclareFun"),
+    Some("CMD_DeclareSort"),
+    Some("CMD_DefineFun"),
+    Some("CMD_DefineFunRec"),
+    Some("CMD_DefineFunsRec"),
+    Some("CMD_DefineSort"),
+    Some("CMD_Echo"),
+    Some("CMD_Exit"),
+    Some("CMD_GetAssertions"),
+    Some("CMD_GetAssignment"),
+    Some("CMD_GetInfo"),
+    Some("CMD_GetModel"),
+    Some("CMD_GetOption"),
+    Some("CMD_GetProof"),
+    Some("CMD_GetUnsatAssumptions"),
+    Some("CMD_GetUnsatCore"),
+    Some("CMD_GetValue"),
+    Some("CMD_Pop"),
+    Some("CMD_Push"),
+    Some("CMD_Reset"),
+    Some("CMD_ResetAssertions"),
+    Some("CMD_SetInfo"),
+    Some("CMD_SetLogic"),
+    Some("CMD_SetOption"),
+    Some("GRW_Exclamation"),
+    Some("GRW_Underscore"),
+    Some("GRW_As"),
+    Some("GRW_Binary"),
+    Some("GRW_Decimal"),
+    Some("GRW_Exists"),
+    Some("GRW_Hexadecimal"),
+    Some("GRW_Forall"),
+    Some("GRW_Let"),
+    Some("GRW_Match"),
+    Some("GRW_Numeral"),
+    Some("GRW_Par"),
+    Some("GRW_String"),
+    Some("Numeral"),
+    Some("Binary"),
+    Some("HexDecimal"),
+    Some("Decimal"),
+    Some("Colon"),
+    Some("PK_AllStatistics"),
+    Some("PK_AssertionStackLevels"),
+    Some("PK_Authors"),
+    Some("PK_Category"),
+    Some("PK_Chainable"),
+    Some("PK_Definition"),
+    Some("PK_DiagnosticOutputChannel"),
+    Some("PK_ErrorBehaviour"),
+    Some("PK_Extension"),
+    Some("PK_Funs"),
+    Some("PK_FunsDescription"),
+    Some("PK_GlobalDeclarations"),
+    Some("PK_InteractiveMode"),
+    Some("PK_Language"),
+    Some("PK_LeftAssoc"),
+    Some("PK_License"),
+    Some("PK_Named"),
+    Some("PK_Name"),
+    Some("PK_Notes"),
+    Some("PK_Pattern"),
+    Some("PK_PrintSuccess"),
+    Some("PK_ProduceAssertions"),
+    Some("PK_ProduceAssignments"),
+    Some("PK_ProduceModels"),
+    Some("PK_ProduceProofs"),
+    Some("PK_ProduceUnsatAssumptions"),
+    Some("PK_ProduceUnsatCores"),
+    Some("PK_RandomSeed"),
+    Some("PK_ReasonUnknown"),
+    Some("PK_RegularOutputChannel"),
+    Some("PK_ReproducibleResourceLimit"),
+    Some("PK_RightAssoc"),
+    Some("PK_SmtLibVersion"),
+    Some("PK_Sorts"),
+    Some("PK_SortsDescription"),
+    Some("PK_Source"),
+    Some("PK_Status"),
+    Some("PK_Theories"),
+    Some("PK_Values"),
+    Some("PK_Verbosity"),
+    Some("PK_Version"),
+    Some("UndefinedSymbol"),
+    Some("WS"),
+];
+lazy_static! {
+    static ref _shared_context_cache: Arc<PredictionContextCache> =
+        Arc::new(PredictionContextCache::new());
+    static ref VOCABULARY: Box<dyn Vocabulary> = Box::new(VocabularyImpl::new(
+        _LITERAL_NAMES.iter(),
+        _SYMBOLIC_NAMES.iter(),
+        None
+    ));
+}
 
-
-	pub const _LITERAL_NAMES: [Option<&'static str>;112] = [
-		None, None, Some("'('"), Some("')'"), Some("';'"), None, None, Some("'not'"),
-		Some("'Bool'"), Some("'continued-execution'"), Some("'error'"), Some("'false'"),
-		Some("'immediate-exit'"), Some("'incomplete'"), Some("'logic'"), Some("'memout'"),
-		Some("'sat'"), Some("'success'"), Some("'theory'"), Some("'true'"), Some("'unknown'"),
-		Some("'unsupported'"), Some("'unsat'"), Some("'assert'"), Some("'check-sat'"),
-		Some("'check-sat-assuming'"), Some("'declare-const'"), Some("'declare-datatype'"),
-		Some("'declare-datatypes'"), Some("'declare-fun'"), Some("'declare-sort'"),
-		Some("'define-fun'"), Some("'define-fun-rec'"), Some("'define-funs-rec'"),
-		Some("'define-sort'"), Some("'echo'"), Some("'exit'"), Some("'get-assertions'"),
-		Some("'get-assignment'"), Some("'get-info'"), Some("'get-model'"), Some("'get-option'"),
-		Some("'get-proof'"), Some("'get-unsat-assumptions'"), Some("'get-unsat-core'"),
-		Some("'get-value'"), Some("'pop'"), Some("'push'"), Some("'reset'"), Some("'reset-assertions'"),
-		Some("'set-info'"), Some("'set-logic'"), Some("'set-option'"), Some("'!'"),
-		Some("'_'"), Some("'as'"), Some("'BINARY'"), Some("'DECIMAL'"), Some("'exists'"),
-		Some("'HEXADECIMAL'"), Some("'forall'"), Some("'let'"), Some("'match'"),
-		Some("'NUMERAL'"), Some("'par'"), Some("'string'"), None, None, None,
-		None, Some("':'"), Some("':all-statistics'"), Some("':assertion-stack-levels'"),
-		Some("':authors'"), Some("':category'"), Some("':chainable'"), Some("':definition'"),
-		Some("':diagnostic-output-channel'"), Some("':error-behavior'"), Some("':extensions'"),
-		Some("':funs'"), Some("':funs-description'"), Some("':global-declarations'"),
-		Some("':interactive-mode'"), Some("':language'"), Some("':left-assoc'"),
-		Some("':license'"), Some("':named'"), Some("':name'"), Some("':notes'"),
-		Some("':pattern'"), Some("':print-success'"), Some("':produce-assertions'"),
-		Some("':produce-assignments'"), Some("':produce-models'"), Some("':produce-proofs'"),
-		Some("':produce-unsat-assumptions'"), Some("':produce-unsat-cores'"),
-		Some("':random-seed'"), Some("':reason-unknown'"), Some("':regular-output-channel'"),
-		Some("':reproducible-resource-limit'"), Some("':right-assoc'"), Some("':smt-lib-version'"),
-		Some("':sorts'"), Some("':sorts-description'"), Some("':source'"), Some("':status'"),
-		Some("':theories'"), Some("':values'"), Some("':verbosity'"), Some("':version'")
-	];
-	pub const _SYMBOLIC_NAMES: [Option<&'static str>;114]  = [
-		None, Some("Comment"), Some("ParOpen"), Some("ParClose"), Some("Semicolon"),
-		Some("String"), Some("QuotedSymbol"), Some("PS_Not"), Some("PS_Bool"),
-		Some("PS_ContinuedExecution"), Some("PS_Error"), Some("PS_False"), Some("PS_ImmediateExit"),
-		Some("PS_Incomplete"), Some("PS_Logic"), Some("PS_Memout"), Some("PS_Sat"),
-		Some("PS_Success"), Some("PS_Theory"), Some("PS_True"), Some("PS_Unknown"),
-		Some("PS_Unsupported"), Some("PS_Unsat"), Some("CMD_Assert"), Some("CMD_CheckSat"),
-		Some("CMD_CheckSatAssuming"), Some("CMD_DeclareConst"), Some("CMD_DeclareDatatype"),
-		Some("CMD_DeclareDatatypes"), Some("CMD_DeclareFun"), Some("CMD_DeclareSort"),
-		Some("CMD_DefineFun"), Some("CMD_DefineFunRec"), Some("CMD_DefineFunsRec"),
-		Some("CMD_DefineSort"), Some("CMD_Echo"), Some("CMD_Exit"), Some("CMD_GetAssertions"),
-		Some("CMD_GetAssignment"), Some("CMD_GetInfo"), Some("CMD_GetModel"),
-		Some("CMD_GetOption"), Some("CMD_GetProof"), Some("CMD_GetUnsatAssumptions"),
-		Some("CMD_GetUnsatCore"), Some("CMD_GetValue"), Some("CMD_Pop"), Some("CMD_Push"),
-		Some("CMD_Reset"), Some("CMD_ResetAssertions"), Some("CMD_SetInfo"), Some("CMD_SetLogic"),
-		Some("CMD_SetOption"), Some("GRW_Exclamation"), Some("GRW_Underscore"),
-		Some("GRW_As"), Some("GRW_Binary"), Some("GRW_Decimal"), Some("GRW_Exists"),
-		Some("GRW_Hexadecimal"), Some("GRW_Forall"), Some("GRW_Let"), Some("GRW_Match"),
-		Some("GRW_Numeral"), Some("GRW_Par"), Some("GRW_String"), Some("Numeral"),
-		Some("Binary"), Some("HexDecimal"), Some("Decimal"), Some("Colon"), Some("PK_AllStatistics"),
-		Some("PK_AssertionStackLevels"), Some("PK_Authors"), Some("PK_Category"),
-		Some("PK_Chainable"), Some("PK_Definition"), Some("PK_DiagnosticOutputChannel"),
-		Some("PK_ErrorBehaviour"), Some("PK_Extension"), Some("PK_Funs"), Some("PK_FunsDescription"),
-		Some("PK_GlobalDeclarations"), Some("PK_InteractiveMode"), Some("PK_Language"),
-		Some("PK_LeftAssoc"), Some("PK_License"), Some("PK_Named"), Some("PK_Name"),
-		Some("PK_Notes"), Some("PK_Pattern"), Some("PK_PrintSuccess"), Some("PK_ProduceAssertions"),
-		Some("PK_ProduceAssignments"), Some("PK_ProduceModels"), Some("PK_ProduceProofs"),
-		Some("PK_ProduceUnsatAssumptions"), Some("PK_ProduceUnsatCores"), Some("PK_RandomSeed"),
-		Some("PK_ReasonUnknown"), Some("PK_RegularOutputChannel"), Some("PK_ReproducibleResourceLimit"),
-		Some("PK_RightAssoc"), Some("PK_SmtLibVersion"), Some("PK_Sorts"), Some("PK_SortsDescription"),
-		Some("PK_Source"), Some("PK_Status"), Some("PK_Theories"), Some("PK_Values"),
-		Some("PK_Verbosity"), Some("PK_Version"), Some("UndefinedSymbol"), Some("WS")
-	];
-	lazy_static!{
-	    static ref _shared_context_cache: Arc<PredictionContextCache> = Arc::new(PredictionContextCache::new());
-		static ref VOCABULARY: Box<dyn Vocabulary> = Box::new(VocabularyImpl::new(_LITERAL_NAMES.iter(), _SYMBOLIC_NAMES.iter(), None));
-	}
-
-
-pub type LexerContext<'input> = BaseRuleContext<'input,EmptyCustomRuleContext<'input,LocalTokenFactory<'input> >>;
+pub type LexerContext<'input> =
+    BaseRuleContext<'input, EmptyCustomRuleContext<'input, LocalTokenFactory<'input>>>;
 pub type LocalTokenFactory<'input> = CommonTokenFactory;
 
-type From<'a> = <LocalTokenFactory<'a> as TokenFactory<'a> >::From;
+type From<'a> = <LocalTokenFactory<'a> as TokenFactory<'a>>::From;
 
 #[derive(Tid)]
-pub struct SMTLIBv2Lexer<'input, Input:CharStream<From<'input> >> {
-	base: BaseLexer<'input,SMTLIBv2LexerActions,Input,LocalTokenFactory<'input>>,
+pub struct SMTLIBv2Lexer<'input, Input: CharStream<From<'input>>> {
+    base: BaseLexer<'input, SMTLIBv2LexerActions, Input, LocalTokenFactory<'input>>,
 }
 
-impl<'input, Input:CharStream<From<'input> >> Deref for SMTLIBv2Lexer<'input,Input>{
-	type Target = BaseLexer<'input,SMTLIBv2LexerActions,Input,LocalTokenFactory<'input>>;
+impl<'input, Input: CharStream<From<'input>>> Deref for SMTLIBv2Lexer<'input, Input> {
+    type Target = BaseLexer<'input, SMTLIBv2LexerActions, Input, LocalTokenFactory<'input>>;
 
-	fn deref(&self) -> &Self::Target {
-		&self.base
-	}
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
 }
 
-impl<'input, Input:CharStream<From<'input> >> DerefMut for SMTLIBv2Lexer<'input,Input>{
-	fn deref_mut(&mut self) -> &mut Self::Target {
-		&mut self.base
-	}
+impl<'input, Input: CharStream<From<'input>>> DerefMut for SMTLIBv2Lexer<'input, Input> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
 }
 
-
-impl<'input, Input:CharStream<From<'input> >> SMTLIBv2Lexer<'input,Input>{
+impl<'input, Input: CharStream<From<'input>>> SMTLIBv2Lexer<'input, Input> {
     fn get_rule_names(&self) -> &'static [&'static str] {
         &ruleNames
     }
@@ -292,50 +552,58 @@ impl<'input, Input:CharStream<From<'input> >> SMTLIBv2Lexer<'input,Input>{
         "SMTLIBv2Lexer.g4"
     }
 
-	pub fn new_with_token_factory(input: Input, tf: &'input LocalTokenFactory<'input>) -> Self {
-		antlr_rust::recognizer::check_version("0","2");
-    	Self {
-			base: BaseLexer::new_base_lexer(
-				input,
-				LexerATNSimulator::new_lexer_atnsimulator(
-					_ATN.clone(),
-					_decision_to_DFA.clone(),
-					_shared_context_cache.clone(),
-				),
-				SMTLIBv2LexerActions{},
-				tf
-			)
-	    }
-	}
+    pub fn new_with_token_factory(input: Input, tf: &'input LocalTokenFactory<'input>) -> Self {
+        antlr_rust::recognizer::check_version("0", "2");
+        Self {
+            base: BaseLexer::new_base_lexer(
+                input,
+                LexerATNSimulator::new_lexer_atnsimulator(
+                    _ATN.clone(),
+                    _decision_to_DFA.clone(),
+                    _shared_context_cache.clone(),
+                ),
+                SMTLIBv2LexerActions {},
+                tf,
+            ),
+        }
+    }
 }
 
-impl<'input, Input:CharStream<From<'input> >> SMTLIBv2Lexer<'input,Input> where &'input LocalTokenFactory<'input>:Default{
-	pub fn new(input: Input) -> Self{
-		SMTLIBv2Lexer::new_with_token_factory(input, <&LocalTokenFactory<'input> as Default>::default())
-	}
+impl<'input, Input: CharStream<From<'input>>> SMTLIBv2Lexer<'input, Input>
+where
+    &'input LocalTokenFactory<'input>: Default,
+{
+    pub fn new(input: Input) -> Self {
+        SMTLIBv2Lexer::new_with_token_factory(
+            input,
+            <&LocalTokenFactory<'input> as Default>::default(),
+        )
+    }
 }
 
-pub struct SMTLIBv2LexerActions {
+pub struct SMTLIBv2LexerActions {}
+
+impl SMTLIBv2LexerActions {}
+
+impl<'input, Input: CharStream<From<'input>>>
+    Actions<'input, BaseLexer<'input, SMTLIBv2LexerActions, Input, LocalTokenFactory<'input>>>
+    for SMTLIBv2LexerActions
+{
 }
 
-impl SMTLIBv2LexerActions{
+impl<'input, Input: CharStream<From<'input>>> SMTLIBv2Lexer<'input, Input> {}
+
+impl<'input, Input: CharStream<From<'input>>>
+    LexerRecog<'input, BaseLexer<'input, SMTLIBv2LexerActions, Input, LocalTokenFactory<'input>>>
+    for SMTLIBv2LexerActions
+{
+}
+impl<'input> TokenAware<'input> for SMTLIBv2LexerActions {
+    type TF = LocalTokenFactory<'input>;
 }
 
-impl<'input, Input:CharStream<From<'input> >> Actions<'input,BaseLexer<'input,SMTLIBv2LexerActions,Input,LocalTokenFactory<'input>>> for SMTLIBv2LexerActions{
-	}
-
-	impl<'input, Input:CharStream<From<'input> >> SMTLIBv2Lexer<'input,Input>{
-
-}
-
-impl<'input, Input:CharStream<From<'input> >> LexerRecog<'input,BaseLexer<'input,SMTLIBv2LexerActions,Input,LocalTokenFactory<'input>>> for SMTLIBv2LexerActions{
-}
-impl<'input> TokenAware<'input> for SMTLIBv2LexerActions{
-	type TF = LocalTokenFactory<'input>;
-}
-
-impl<'input, Input:CharStream<From<'input> >> TokenSource<'input> for SMTLIBv2Lexer<'input,Input>{
-	type TF = LocalTokenFactory<'input>;
+impl<'input, Input: CharStream<From<'input>>> TokenSource<'input> for SMTLIBv2Lexer<'input, Input> {
+    type TF = LocalTokenFactory<'input>;
 
     fn next_token(&mut self) -> <Self::TF as TokenFactory<'input>>::Tok {
         self.base.next_token()
@@ -353,38 +621,30 @@ impl<'input, Input:CharStream<From<'input> >> TokenSource<'input> for SMTLIBv2Le
         self.base.get_input_stream()
     }
 
-	fn get_source_name(&self) -> String {
-		self.base.get_source_name()
-	}
+    fn get_source_name(&self) -> String {
+        self.base.get_source_name()
+    }
 
     fn get_token_factory(&self) -> &'input Self::TF {
         self.base.get_token_factory()
     }
 }
 
+lazy_static! {
+    static ref _ATN: Arc<ATN> =
+        Arc::new(ATNDeserializer::new(None).deserialize(_serializedATN.chars()));
+    static ref _decision_to_DFA: Arc<Vec<antlr_rust::RwLock<DFA>>> = {
+        let mut dfa = Vec::new();
+        let size = _ATN.decision_to_state.len();
+        for i in 0..size {
+            dfa.push(DFA::new(_ATN.clone(), _ATN.get_decision_state(i), i as isize).into())
+        }
+        Arc::new(dfa)
+    };
+}
 
-
-	lazy_static! {
-	    static ref _ATN: Arc<ATN> =
-	        Arc::new(ATNDeserializer::new(None).deserialize(_serializedATN.chars()));
-	    static ref _decision_to_DFA: Arc<Vec<antlr_rust::RwLock<DFA>>> = {
-	        let mut dfa = Vec::new();
-	        let size = _ATN.decision_to_state.len();
-	        for i in 0..size {
-	            dfa.push(DFA::new(
-	                _ATN.clone(),
-	                _ATN.get_decision_state(i),
-	                i as isize,
-	            ).into())
-	        }
-	        Arc::new(dfa)
-	    };
-	}
-
-
-
-	const _serializedATN:&'static str =
-		"\x03\u{608b}\u{a72a}\u{8133}\u{b9ed}\u{417c}\u{3be7}\u{7786}\u{5964}\x02\
+const _serializedATN: &'static str =
+    "\x03\u{608b}\u{a72a}\u{8133}\u{b9ed}\u{417c}\u{3be7}\u{7786}\u{5964}\x02\
 		\x73\u{5e2}\x08\x01\x04\x02\x09\x02\x04\x03\x09\x03\x04\x04\x09\x04\x04\
 		\x05\x09\x05\x04\x06\x09\x06\x04\x07\x09\x07\x04\x08\x09\x08\x04\x09\x09\
 		\x09\x04\x0a\x09\x0a\x04\x0b\x09\x0b\x04\x0c\x09\x0c\x04\x0d\x09\x0d\x04\
