@@ -3,8 +3,16 @@
 use std::ops::Deref;
 
 use antlr_rust::common_token_stream::CommonTokenStream;
+use antlr_rust::error_listener::ErrorListener;
+use antlr_rust::errors::ANTLRError;
 use antlr_rust::input_stream::InputStream;
+use antlr_rust::interval_set::Interval;
+use antlr_rust::recognizer::Recognizer;
+use antlr_rust::token::Token;
+use antlr_rust::token_factory::TokenFactory;
+use antlr_rust::token_stream::TokenStream;
 use antlr_rust::tree::{ParseTree, ParseTreeListener, Tree};
+use antlr_rust::Parser;
 
 mod parser;
 
@@ -16,30 +24,32 @@ use smtlibv2lexer::SMTLIBv2Lexer;
 use smtlibv2listener::SMTLIBv2Listener;
 use smtlibv2parser::*;
 
-type Numeral = u64;
-type HexDecimal = Vec<bool>;
-type Binary = Vec<bool>;
+pub type Symbol = String;
+pub type Numeral = String;
+pub type HexDecimal = String;
+pub type Binary = String;
+pub type Keyword = String;
 
-enum SpecConstant {
+pub enum SpecConstant {
     Numeral(Numeral),
     HexDecimal(HexDecimal),
     Binary(Binary),
     String(String),
 }
 
-enum Term {
+pub enum Term {
     SpecConstant(SpecConstant),
     // TODO remove
     Unknown(String),
 }
 
-enum Command {
+pub enum Command {
     Assert(Term),
     Unknown(String),
 }
 
-struct Script {
-    commands: Vec<Command>,
+pub struct Script {
+    pub commands: Vec<Command>,
 }
 
 impl Script {
@@ -50,29 +60,34 @@ impl Script {
     }
 }
 
-struct Listener {
-    script: Script,
-}
+type VisitorError = (&'static str, Interval);
+type VisitorResult<T> = Result<T, VisitorError>;
+
+struct Listener {}
 
 impl Listener {
     fn new() -> Self {
-        Listener {
-            script: Script::new(),
-        }
+        Listener {}
     }
 
-    fn command(&self, ctx: &CommandContextAll) -> Command {
-        // if ctx.cmd_declareFun().is_some() {
-        //     println!("Found declare-fun");
-        // }
+    fn script(&self, ctx: &ScriptContextAll) -> VisitorResult<Script> {
+        let mut script = Script::new();
+        for cmd in ctx.command_all() {
+            script.commands.push(self.command(&*cmd)?)
+        }
+
+        Ok(script)
+    }
+
+    fn command(&self, ctx: &CommandContextAll) -> VisitorResult<Command> {
         if ctx.cmd_assert().is_some() {
-            Command::Assert(self.term(&*ctx.term(0).unwrap()))
+            Ok(Command::Assert(self.term(&*ctx.term(0).unwrap())?))
         } else {
-            Command::Unknown(ctx.get_text())
+            Ok(Command::Unknown(ctx.get_text()))
         }
     }
 
-    fn term(&self, ctx: &TermContextAll) -> Term {
+    fn term(&self, ctx: &TermContextAll) -> VisitorResult<Term> {
         /*
          * term
          *     : spec_constant
@@ -89,69 +104,89 @@ impl Listener {
         let num_par_close = ctx.ParClose_all().len();
 
         if let Some(spec_constant) = ctx.spec_constant() {
-            Term::SpecConstant(self.spec_constant(&*spec_constant))
+            Ok(Term::SpecConstant(self.spec_constant(&*spec_constant)?))
         } else {
-            Term::Unknown(ctx.get_text())
+            Ok(Term::Unknown(ctx.get_text()))
         }
     }
 
-    fn spec_constant(&self, ctx: &Spec_constantContextAll) -> SpecConstant {
+    fn spec_constant(&self, ctx: &Spec_constantContextAll) -> VisitorResult<SpecConstant> {
         if let Some(numeral) = ctx.numeral() {
-            SpecConstant::Numeral(self.numeral(&*numeral))
+            Ok(SpecConstant::Numeral(self.numeral(&*numeral)?))
         } else if let Some(_decimal) = ctx.decimal() {
-            panic!("Decimal numbers are not supported yet");
+            Err((
+                "Decimal numbers are not supported yet",
+                ctx.get_source_interval(),
+            ))
         } else if let Some(hex) = ctx.hexadecimal() {
-            SpecConstant::HexDecimal(self.hexadecimal(&*hex))
+            Ok(SpecConstant::HexDecimal(self.hexadecimal(&*hex)?))
         } else if let Some(bin) = ctx.binary() {
-            SpecConstant::Binary(self.binary(&*bin))
+            Ok(SpecConstant::Binary(self.binary(&*bin)?))
         } else {
-            SpecConstant::String(self.string(&*ctx.string().unwrap()))
+            Ok(SpecConstant::String(self.string(&*ctx.string().unwrap())?))
         }
     }
 
-    fn numeral(&self, ctx: &NumeralContextAll) -> Numeral {
-        let text = ctx.get_text();
-        text.parse().expect(&text[..])
+    fn numeral(&self, ctx: &NumeralContextAll) -> VisitorResult<Numeral> {
+        Ok(ctx.get_text())
     }
 
-    fn hexadecimal(&self, ctx: &HexadecimalContextAll) -> HexDecimal {
-        // TODO
-        Vec::new()
+    fn hexadecimal(&self, ctx: &HexadecimalContextAll) -> VisitorResult<HexDecimal> {
+        Ok(ctx.get_text())
     }
 
-    fn binary(&self, ctx: &BinaryContextAll) -> Binary {
-        // TODO
-        Vec::new()
+    fn binary(&self, ctx: &BinaryContextAll) -> VisitorResult<Binary> {
+        Ok(ctx.get_text())
     }
 
-    fn string(&self, ctx: &StringContextAll) -> String {
-        ctx.get_text()
+    fn string(&self, ctx: &StringContextAll) -> VisitorResult<String> {
+        Ok(ctx.get_text())
     }
 }
 
 impl ParseTreeListener<'_, SMTLIBv2ParserContextType> for Listener {}
-impl SMTLIBv2Listener<'_> for Listener {
-    fn exit_script(&mut self, _ctx: &ScriptContext) {
-        println!("exit_script");
-        for cmd in _ctx.command_all() {
-            self.script.commands.push(self.command(&*cmd));
-        }
+impl SMTLIBv2Listener<'_> for Listener {}
+
+pub struct PanicErrorListener {}
+
+impl<'a, T: Recognizer<'a>> ErrorListener<'a, T> for PanicErrorListener {
+    fn syntax_error(
+        &self,
+        _recognizer: &T,
+        _offending_symbol: Option<&<T::TF as TokenFactory<'a>>::Inner>,
+        line: isize,
+        column: isize,
+        msg: &str,
+        _e: Option<&ANTLRError>,
+    ) {
+        panic!("line {}:{} {}", line, column, msg);
     }
 }
 
-pub fn parse(script: &str) -> i32 {
-    let lexer = SMTLIBv2Lexer::new(InputStream::new(script));
+pub fn parse(script: &str) -> Result<Script, String> {
+    let mut lexer = SMTLIBv2Lexer::new(InputStream::new(script));
+    lexer.add_error_listener(Box::new(PanicErrorListener {}));
     let token_source = CommonTokenStream::new(lexer);
     let mut parser = SMTLIBv2Parser::new(token_source);
     let listener_id = parser.add_parse_listener(Box::new(Listener::new()));
+    parser.add_error_listener(Box::new(PanicErrorListener {}));
     let result = parser.start();
     assert!(result.is_ok());
     let listener = parser.remove_parse_listener(listener_id);
 
     println!("Parsing finished.");
 
-    let script = listener.script;
-    println!("Parsed {} commands", script.commands.len());
+    let script_result = listener.script(&*result.unwrap().script().unwrap());
 
-    return 12;
+    script_result.map_err(|(e, interval)| -> String {
+        let input = &parser.input;
+        let token = input.get(interval.a);
+        format!(
+            "line {}:{}: {}, offending token: '{}'",
+            token.get_line(),
+            token.get_column(),
+            e,
+            input.get_text_from_interval(interval.a, interval.b)
+        )
+    })
 }
