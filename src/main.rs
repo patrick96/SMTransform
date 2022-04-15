@@ -9,5 +9,6 @@ fn main() -> Result<(), String> {
     let script = smtransform::parse(contents.as_str())?;
 
     println!("Parsed {} commands", script.commands.len());
+    println!("{}", script.to_string());
     Ok(())
 }

@@ -1,7 +1,5 @@
 #![feature(try_blocks)]
 
-use std::ops::Deref;
-
 use antlr_rust::common_token_stream::CommonTokenStream;
 use antlr_rust::error_listener::ErrorListener;
 use antlr_rust::errors::ANTLRError;
@@ -11,7 +9,7 @@ use antlr_rust::recognizer::Recognizer;
 use antlr_rust::token::Token;
 use antlr_rust::token_factory::TokenFactory;
 use antlr_rust::token_stream::TokenStream;
-use antlr_rust::tree::{ParseTree, ParseTreeListener, Tree};
+use antlr_rust::tree::{ParseTree, ParseTreeListener};
 use antlr_rust::Parser;
 
 mod parser;
@@ -30,6 +28,20 @@ pub type HexDecimal = String;
 pub type Binary = String;
 pub type Keyword = String;
 
+pub enum Identifier {
+    Id(String),
+}
+
+impl std::fmt::Display for Identifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Identifier::*;
+
+        match self {
+            Id(id) => id.fmt(f),
+        }
+    }
+}
+
 pub enum SpecConstant {
     Numeral(Numeral),
     HexDecimal(HexDecimal),
@@ -37,15 +49,65 @@ pub enum SpecConstant {
     String(String),
 }
 
+impl std::fmt::Display for SpecConstant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use SpecConstant::*;
+
+        match self {
+            Numeral(n) => n.fmt(f),
+            HexDecimal(h) => h.fmt(f),
+            Binary(b) => b.fmt(f),
+            String(s) => s.fmt(f),
+        }
+    }
+}
+
 pub enum Term {
     SpecConstant(SpecConstant),
-    // TODO remove
-    Unknown(String),
+    Identifier(Identifier),
+    Op(Identifier, Vec<Term>),
+}
+
+impl std::fmt::Display for Term {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Term::*;
+
+        match self {
+            SpecConstant(c) => c.fmt(f),
+            Identifier(s) => s.fmt(f),
+            Op(id, terms) => {
+                write!(f, "(")?;
+                id.fmt(f)?;
+                for term in terms {
+                    write!(f, " ")?;
+                    term.fmt(f)?;
+                }
+                write!(f, ")")
+            }
+        }
+    }
 }
 
 pub enum Command {
     Assert(Term),
+    CheckSat,
     Unknown(String),
+}
+
+impl std::fmt::Display for Command {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Command::*;
+
+        match self {
+            Assert(assert) => {
+                write!(f, "(assert ")?;
+                assert.fmt(f)?;
+                write!(f, ")")
+            }
+            CheckSat => write!(f, "(check-sat)"),
+            Unknown(s) => write!(f, "(unknown: {})", s),
+        }
+    }
 }
 
 pub struct Script {
@@ -60,11 +122,27 @@ impl Script {
     }
 }
 
+impl std::fmt::Display for Script {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for command in &self.commands {
+            command.fmt(f)?;
+            writeln!(f)?;
+        }
+
+        Ok(())
+    }
+}
+
 type VisitorError = (&'static str, Interval);
 type VisitorResult<T> = Result<T, VisitorError>;
 
 struct Listener {}
 
+macro_rules! visitor_error {
+    ($msg:literal, $ctx:expr) => {
+        Err(($msg, $ctx.get_source_interval()))
+    };
+}
 impl Listener {
     fn new() -> Self {
         Listener {}
@@ -82,6 +160,8 @@ impl Listener {
     fn command(&self, ctx: &CommandContextAll) -> VisitorResult<Command> {
         if ctx.cmd_assert().is_some() {
             Ok(Command::Assert(self.term(&*ctx.term(0).unwrap())?))
+        } else if ctx.cmd_checkSat().is_some() {
+            Ok(Command::CheckSat)
         } else {
             Ok(Command::Unknown(ctx.get_text()))
         }
@@ -105,8 +185,21 @@ impl Listener {
 
         if let Some(spec_constant) = ctx.spec_constant() {
             Ok(Term::SpecConstant(self.spec_constant(&*spec_constant)?))
+        } else if let Some(qual_identifier) = ctx.qual_identifier() {
+            if num_par_open >= 1 && num_par_close >= 1 {
+                let op = self.qual_identifier(&*qual_identifier)?;
+                let mut terms = Vec::new();
+
+                for term in &ctx.term_all() {
+                    terms.push(self.term(&*term)?);
+                }
+
+                Ok(Term::Op(op, terms))
+            } else {
+                Ok(Term::Identifier(self.qual_identifier(&*qual_identifier)?))
+            }
         } else {
-            Ok(Term::Unknown(ctx.get_text()))
+            visitor_error!("Unsupported term", ctx)
         }
     }
 
@@ -114,10 +207,7 @@ impl Listener {
         if let Some(numeral) = ctx.numeral() {
             Ok(SpecConstant::Numeral(self.numeral(&*numeral)?))
         } else if let Some(_decimal) = ctx.decimal() {
-            Err((
-                "Decimal numbers are not supported yet",
-                ctx.get_source_interval(),
-            ))
+            visitor_error!("Decimal numbers are not supported yet", ctx)
         } else if let Some(hex) = ctx.hexadecimal() {
             Ok(SpecConstant::HexDecimal(self.hexadecimal(&*hex)?))
         } else if let Some(bin) = ctx.binary() {
@@ -140,6 +230,44 @@ impl Listener {
     }
 
     fn string(&self, ctx: &StringContextAll) -> VisitorResult<String> {
+        Ok(ctx.get_text())
+    }
+
+    fn qual_identifier(&self, ctx: &Qual_identifierContextAll) -> VisitorResult<Identifier> {
+        if ctx.GRW_As().is_some() {
+            visitor_error!("'as' identifiers no supported", ctx)
+        } else if let Some(id) = ctx.identifier() {
+            self.identifier(&*id)
+        } else {
+            visitor_error!("Unsupported qual_identifier", ctx)
+        }
+    }
+
+    fn identifier(&self, ctx: &IdentifierContextAll) -> VisitorResult<Identifier> {
+        if ctx.GRW_Underscore().is_some() {
+            let symbol = self.symbol(&*ctx.symbol().unwrap())?;
+
+            let mut id = format!("_ {}", symbol);
+
+            for index in &ctx.index_all() {
+                id += " ";
+                id += &index.get_text();
+            }
+
+            Ok(Identifier::Id(id))
+        } else if let Some(symbol) = ctx.symbol() {
+            Ok(Identifier::Id(self.symbol(&*symbol)?))
+        } else {
+            visitor_error!("Unsupported identifier", ctx)
+        }
+    }
+
+    fn symbol(&self, ctx: &SymbolContextAll) -> VisitorResult<Symbol> {
+        Ok(ctx.get_text())
+    }
+
+    #[allow(dead_code)]
+    fn keyword(&self, ctx: &KeywordContextAll) -> VisitorResult<Keyword> {
         Ok(ctx.get_text())
     }
 }
@@ -180,11 +308,14 @@ pub fn parse(script: &str) -> Result<Script, String> {
 
     script_result.map_err(|(e, interval)| -> String {
         let input = &parser.input;
-        let token = input.get(interval.a);
+        let token1 = input.get(interval.a);
+        let token2 = input.get(interval.b);
         format!(
-            "line {}:{}: {}, offending token: '{}'",
-            token.get_line(),
-            token.get_column(),
+            "line {}:{}-{}:{}: {}, offending token: '{}'",
+            token1.get_line(),
+            token1.get_column(),
+            token2.get_line(),
+            token2.get_column(),
             e,
             input.get_text_from_interval(interval.a, interval.b)
         )
