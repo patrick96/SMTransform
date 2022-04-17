@@ -454,6 +454,16 @@ pub fn parse(script: &str) -> Result<Script, String> {
         let input = &parser.input;
         let token1 = input.get(interval.a);
         let token2 = input.get(interval.b);
+
+        let mut token_string = String::new();
+
+        for i in interval.a..=interval.b {
+            if i != interval.a {
+                token_string.push(' ');
+            }
+            token_string += input.get(i).get_text();
+        }
+
         format!(
             "line {}:{}-{}:{}: {}, offending token: '{}'",
             token1.get_line(),
@@ -461,7 +471,7 @@ pub fn parse(script: &str) -> Result<Script, String> {
             token2.get_line(),
             token2.get_column(),
             e,
-            input.get_text_from_interval(interval.a, interval.b)
+            token_string
         )
     })
 }
