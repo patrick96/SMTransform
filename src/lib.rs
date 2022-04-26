@@ -1,5 +1,7 @@
 #![feature(try_blocks)]
 
+use std::collections::HashSet;
+
 use antlr_rust::common_token_stream::CommonTokenStream;
 use antlr_rust::error_listener::ErrorListener;
 use antlr_rust::errors::ANTLRError;
@@ -29,8 +31,19 @@ pub type HexDecimal = String;
 pub type Binary = String;
 pub type Keyword = String;
 
+#[derive(Debug)]
 pub enum Identifier {
     Id(String),
+}
+
+impl Identifier {
+    fn get_variable(&self) -> Option<String> {
+        use Identifier::*;
+
+        match self {
+            Id(id) => Some(id.to_string()),
+        }
+    }
 }
 
 impl std::fmt::Display for Identifier {
@@ -43,6 +56,7 @@ impl std::fmt::Display for Identifier {
     }
 }
 
+#[derive(Debug)]
 pub struct Sort {
     name: Identifier,
     sorts: Vec<Sort>,
@@ -68,6 +82,7 @@ impl std::fmt::Display for Sort {
     }
 }
 
+#[derive(Debug)]
 pub enum SpecConstant {
     Numeral(Numeral),
     Decimal(Decimal),
@@ -90,10 +105,34 @@ impl std::fmt::Display for SpecConstant {
     }
 }
 
+#[derive(Debug)]
 pub enum Term {
     SpecConstant(SpecConstant),
     Identifier(Identifier),
     Op(Identifier, Vec<Term>),
+}
+
+impl Term {
+    fn free_variables(&self) -> HashSet<String> {
+        use Term::*;
+        let mut vars = HashSet::new();
+
+        match self {
+            SpecConstant(_) => (),
+            Identifier(ident) => {
+                if let Some(var) = ident.get_variable() {
+                    vars.insert(var);
+                }
+            }
+            Op(_, terms) => {
+                for term in terms {
+                    vars.extend(term.free_variables());
+                }
+            }
+        };
+
+        vars
+    }
 }
 
 impl std::fmt::Display for Term {
@@ -200,6 +239,18 @@ impl Script {
         Script {
             commands: Vec::new(),
         }
+    }
+
+    pub fn free_variables(&self) -> HashSet<String> {
+        let mut vars = HashSet::new();
+
+        for command in &self.commands {
+            if let Command::Assert(term) = command {
+                vars.extend(term.free_variables());
+            }
+        }
+
+        vars
     }
 }
 
