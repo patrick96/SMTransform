@@ -55,7 +55,7 @@ pub struct Formula {
     /**
      * Set from (set-info :status ...)
      */
-    status: ResultKind,
+    status: Option<ResultKind>,
 
     /**
      * Set from (set-info :smt-lib-version ...)
@@ -95,12 +95,17 @@ impl Formula {
                             s => Type::Other(s.to_string()),
                         };
                     } else {
-                        fun_type = Type::Fun(format!("{} {}", args.iter().fold(String::new(), |a, b| format!("{} {}", a, b)), result));
+                        fun_type = Type::Fun(format!(
+                            "{} {}",
+                            args.iter()
+                                .fold(String::new(), |a, b| format!("{} {}", a, b)),
+                            result
+                        ));
                     }
 
                     free_vars.insert(name.clone(), fun_type);
                     commands.push(command.clone());
-                },
+                }
                 CheckSat => {
                     if check_sat_seen {
                         return Err("Multiple check-sat commands".to_string());
@@ -146,7 +151,7 @@ impl Formula {
             commands: commands,
             logic: logic,
             free_vars: free_vars,
-            status: status.ok_or("No (set-info :status ...)".to_string())?,
+            status: status,
             smt_lib_version: smt_lib_version,
         })
     }
@@ -168,12 +173,14 @@ impl Formula {
             cmds.push(Command::SetLogic(logic.to_string()));
         }
 
-        cmds.push(Command::SetInfo(Attribute {
-            keyword: ":status".into(),
-            value: Some(AttributeValue::SpecConstant(SpecConstant::String(
-                self.status.to_string(),
-            ))),
-        }));
+        if let Some(status) = &self.status {
+            cmds.push(Command::SetInfo(Attribute {
+                keyword: ":status".into(),
+                value: Some(AttributeValue::SpecConstant(SpecConstant::String(
+                    status.to_string(),
+                ))),
+            }));
+        }
 
         cmds.extend(self.commands.clone());
 
