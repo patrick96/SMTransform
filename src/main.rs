@@ -7,8 +7,6 @@ mod formula;
 mod parser;
 
 use crate::parser::Command;
-use crate::parser::Identifier;
-use crate::parser::Term;
 
 use crate::formula::Formula;
 
@@ -16,7 +14,7 @@ fn main() -> Result<(), String> {
     let args: Vec<String> = env::args().collect();
     let filename = &args[1];
     let contents = fs::read_to_string(filename).unwrap();
-    let mut script = crate::parser::parse(contents.as_str())?;
+    let script = crate::parser::parse(contents.as_str())?;
 
     for unknown in script.commands.iter().filter_map(|c| {
         if let Command::Unknown(s) = c {
@@ -28,7 +26,9 @@ fn main() -> Result<(), String> {
         eprintln!("Unknown command: {}", unknown)
     }
 
-    let mut formula = Formula::from(&script)?;
+    let formula = Formula::from(&script)?;
+
+    dbg!(&formula.free_vars);
 
     println!("{}", formula.to_script().to_string());
     Ok(())

@@ -3,8 +3,6 @@ pub mod smtlibv2listener;
 pub mod smtlibv2parser;
 pub mod smtlibv2visitor;
 
-use std::collections::HashSet;
-
 use antlr_rust::common_token_stream::CommonTokenStream;
 use antlr_rust::error_listener::ErrorListener;
 use antlr_rust::errors::ANTLRError;
@@ -31,16 +29,6 @@ pub type Keyword = String;
 #[derive(Debug, Clone)]
 pub enum Identifier {
     Id(String),
-}
-
-impl Identifier {
-    fn get_variable(&self) -> Option<String> {
-        use Identifier::*;
-
-        match self {
-            Id(id) => Some(id.to_string()),
-        }
-    }
 }
 
 impl std::fmt::Display for Identifier {
@@ -107,29 +95,6 @@ pub enum Term {
     SpecConstant(SpecConstant),
     Identifier(Identifier),
     Op(Identifier, Vec<Term>),
-}
-
-impl Term {
-    fn free_variables(&self) -> HashSet<String> {
-        use Term::*;
-        let mut vars = HashSet::new();
-
-        match self {
-            SpecConstant(_) => (),
-            Identifier(ident) => {
-                if let Some(var) = ident.get_variable() {
-                    vars.insert(var);
-                }
-            }
-            Op(_, terms) => {
-                for term in terms {
-                    vars.extend(term.free_variables());
-                }
-            }
-        };
-
-        vars
-    }
 }
 
 impl std::fmt::Display for Term {
@@ -239,18 +204,6 @@ impl Script {
         Script {
             commands: Vec::new(),
         }
-    }
-
-    pub fn free_variables(&self) -> HashSet<String> {
-        let mut vars = HashSet::new();
-
-        for command in &self.commands {
-            if let Command::Assert(term) = command {
-                vars.extend(term.free_variables());
-            }
-        }
-
-        vars
     }
 }
 

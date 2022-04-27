@@ -2,6 +2,7 @@ use crate::parser::*;
 
 use std::collections::HashMap;
 
+#[derive(Debug)]
 pub enum ResultKind {
     SAT,
     UNSAT,
@@ -20,6 +21,16 @@ impl std::fmt::Display for ResultKind {
     }
 }
 
+#[derive(Debug)]
+pub enum Type {
+    Int,
+    Bool,
+    Real,
+    String,
+    Fun(String),
+    Other(String),
+}
+
 /**
  * Simplified version of [Script] with some assumptions.
  *
@@ -29,7 +40,12 @@ impl std::fmt::Display for ResultKind {
  */
 pub struct Formula {
     constraints: Vec<Term>,
-    free_vars: HashMap<String, Sort>,
+    pub free_vars: HashMap<String, Type>,
+
+    /**
+     * Commands from the original [Script] that have to be emitted as-is
+     */
+    commands: Vec<Command>,
 
     /**
      * Set from (set-logic ...)
@@ -53,7 +69,8 @@ impl Formula {
         let mut status = None;
         let mut smt_lib_version = None;
         let mut constraints: Vec<Term> = Vec::new();
-        let mut free_vars: HashMap<String, Sort> = HashMap::new();
+        let mut free_vars: HashMap<String, Type> = HashMap::new();
+        let mut commands: Vec<Command> = Vec::new();
 
         let mut check_sat_seen = false;
 
@@ -62,7 +79,28 @@ impl Formula {
             match command {
                 Assert(term) => constraints.push(term.clone()),
                 // TODO collect free variables
-                DeclareFun(_, _, _) => (),
+                DeclareFun(name, args, result) => {
+                    if free_vars.contains_key(name) {
+                        return Err(format!("Duplicate variable name: '{}'", name));
+                    }
+
+                    let fun_type;
+
+                    if args.is_empty() {
+                        fun_type = match result.to_string().as_str() {
+                            "Int" => Type::Int,
+                            "Bool" => Type::Bool,
+                            "Real" => Type::Real,
+                            "String" => Type::String,
+                            s => Type::Other(s.to_string()),
+                        };
+                    } else {
+                        fun_type = Type::Fun(format!("{} {}", args.iter().fold(String::new(), |a, b| format!("{} {}", a, b)), result));
+                    }
+
+                    free_vars.insert(name.clone(), fun_type);
+                    commands.push(command.clone());
+                },
                 CheckSat => {
                     if check_sat_seen {
                         return Err("Multiple check-sat commands".to_string());
@@ -105,6 +143,7 @@ impl Formula {
 
         Ok(Formula {
             constraints: constraints,
+            commands: commands,
             logic: logic,
             free_vars: free_vars,
             status: status.ok_or("No (set-info :status ...)".to_string())?,
@@ -135,6 +174,8 @@ impl Formula {
                 self.status.to_string(),
             ))),
         }));
+
+        cmds.extend(self.commands.clone());
 
         for assertion in &self.constraints {
             cmds.push(Command::Assert(assertion.clone()));
