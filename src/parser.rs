@@ -1,4 +1,7 @@
-#![feature(try_blocks)]
+pub mod smtlibv2lexer;
+pub mod smtlibv2listener;
+pub mod smtlibv2parser;
+pub mod smtlibv2visitor;
 
 use std::collections::HashSet;
 
@@ -13,12 +16,6 @@ use antlr_rust::token_factory::TokenFactory;
 use antlr_rust::token_stream::TokenStream;
 use antlr_rust::tree::{ParseTree, ParseTreeListener, Tree};
 use antlr_rust::Parser;
-
-mod parser;
-
-use parser::smtlibv2lexer;
-use parser::smtlibv2listener;
-use parser::smtlibv2parser;
 
 use smtlibv2lexer::SMTLIBv2Lexer;
 use smtlibv2listener::SMTLIBv2Listener;
@@ -407,12 +404,14 @@ impl Listener {
         if ctx.GRW_Underscore().is_some() {
             let symbol = self.symbol(&*ctx.symbol().unwrap())?;
 
-            let mut id = format!("_ {}", symbol);
+            let mut id = format!("(_ {}", symbol);
 
             for index in &ctx.index_all() {
                 id += " ";
                 id += &index.get_text();
             }
+
+            id += ")";
 
             Ok(Identifier::Id(id))
         } else if let Some(symbol) = ctx.symbol() {
