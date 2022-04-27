@@ -28,7 +28,7 @@ pub type HexDecimal = String;
 pub type Binary = String;
 pub type Keyword = String;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Identifier {
     Id(String),
 }
@@ -53,7 +53,7 @@ impl std::fmt::Display for Identifier {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Sort {
     name: Identifier,
     sorts: Vec<Sort>,
@@ -79,7 +79,7 @@ impl std::fmt::Display for Sort {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SpecConstant {
     Numeral(Numeral),
     Decimal(Decimal),
@@ -102,7 +102,7 @@ impl std::fmt::Display for SpecConstant {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Term {
     SpecConstant(SpecConstant),
     Identifier(Identifier),
@@ -152,6 +152,7 @@ impl std::fmt::Display for Term {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum AttributeValue {
     SpecConstant(SpecConstant),
     Symbol(Symbol),
@@ -168,9 +169,10 @@ impl std::fmt::Display for AttributeValue {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Attribute {
-    keyword: Keyword,
-    value: Option<AttributeValue>,
+    pub keyword: Keyword,
+    pub value: Option<AttributeValue>,
 }
 
 impl std::fmt::Display for Attribute {
@@ -185,6 +187,7 @@ impl std::fmt::Display for Attribute {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum Command {
     Assert(Term),
     DeclareFun(Symbol, Vec<Sort>, Sort),
@@ -232,7 +235,7 @@ pub struct Script {
 }
 
 impl Script {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Script {
             commands: Vec::new(),
         }

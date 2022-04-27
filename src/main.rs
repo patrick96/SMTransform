@@ -3,11 +3,14 @@
 use std::env;
 use std::fs;
 
+mod formula;
 mod parser;
 
 use crate::parser::Command;
 use crate::parser::Identifier;
 use crate::parser::Term;
+
+use crate::formula::Formula;
 
 fn main() -> Result<(), String> {
     let args: Vec<String> = env::args().collect();
@@ -25,13 +28,8 @@ fn main() -> Result<(), String> {
         eprintln!("Unknown command: {}", unknown)
     }
 
-    dbg!(script.free_variables());
+    let mut formula = Formula::from(&script)?;
 
-    script.commands.insert(
-        0,
-        Command::Assert(Term::Identifier(Identifier::Id("false".to_string()))),
-    );
-
-    println!("{}", script.to_string());
+    println!("{}", formula.to_script().to_string());
     Ok(())
 }
