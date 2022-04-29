@@ -3,6 +3,8 @@ pub mod smtlibv2listener;
 pub mod smtlibv2parser;
 pub mod smtlibv2visitor;
 
+use std::collections::HashMap;
+
 use antlr_rust::common_token_stream::CommonTokenStream;
 use antlr_rust::error_listener::ErrorListener;
 use antlr_rust::errors::ANTLRError;
@@ -27,8 +29,53 @@ pub type Binary = String;
 pub type Keyword = String;
 
 #[derive(Debug, Clone)]
+pub enum Type {
+    Int,
+    Bool,
+    Real,
+    String,
+    Fun(String),
+    Other(String),
+}
+
+impl Type {
+    fn from(args: &[Sort], result: &Sort) -> Type {
+        if args.is_empty() {
+            match result.to_string().as_str() {
+                "Int" => Type::Int,
+                "Bool" => Type::Bool,
+                "Real" => Type::Real,
+                "String" => Type::String,
+                s => Type::Other(s.to_string()),
+            }
+        } else {
+            Type::Fun(format!(
+                "{} {}",
+                args.iter()
+                    .fold(String::new(), |a, b| format!("{} {}", a, b)),
+                result
+            ))
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Var {
+    name: String,
+    global: bool,
+    t: Type,
+}
+
+impl std::fmt::Display for Var {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Identifier {
     Id(String),
+    Var(Var),
 }
 
 impl std::fmt::Display for Identifier {
@@ -37,6 +84,7 @@ impl std::fmt::Display for Identifier {
 
         match self {
             Id(id) => id.fmt(f),
+            Var(var) => var.fmt(f),
         }
     }
 }
@@ -155,7 +203,7 @@ impl std::fmt::Display for Attribute {
 #[derive(Debug, Clone)]
 pub enum Command {
     Assert(Term),
-    DeclareFun(Symbol, Vec<Sort>, Sort),
+    DeclareFun(Symbol, Vec<Sort>, Sort, Type),
     CheckSat,
     GetModel,
     Exit,
@@ -172,7 +220,7 @@ impl std::fmt::Display for Command {
 
         match self {
             Assert(assert) => write!(f, "(assert {})", assert),
-            DeclareFun(name, arg_sorts, return_sort) => {
+            DeclareFun(name, arg_sorts, return_sort, _) => {
                 write!(f, "(declare-fun {} (", name)?;
 
                 for (pos, arg_sort) in arg_sorts.iter().enumerate() {
@@ -197,12 +245,14 @@ impl std::fmt::Display for Command {
 
 pub struct Script {
     pub commands: Vec<Command>,
+    pub global_vars: HashMap<String, Type>,
 }
 
 impl Script {
     pub fn new() -> Self {
         Script {
             commands: Vec::new(),
+            global_vars: HashMap::new(),
         }
     }
 }
@@ -218,45 +268,68 @@ impl std::fmt::Display for Script {
     }
 }
 
-type VisitorError = (&'static str, Interval);
+type VisitorError = (String, Interval);
 type VisitorResult<T> = Result<T, VisitorError>;
 
-struct Listener {}
+struct Listener {
+    global_vars: HashMap<String, Type>,
+}
 
 macro_rules! visitor_error {
-    ($msg:literal, $ctx:expr) => {
-        Err(($msg, $ctx.get_source_interval()))
+    ($msg:expr, $ctx:expr) => {
+        Err(($msg.to_string(), $ctx.get_source_interval()))
     };
 }
 impl Listener {
     fn new() -> Self {
-        Listener {}
+        Listener {
+            global_vars: HashMap::new(),
+        }
     }
 
-    fn script(&self, ctx: &ScriptContextAll) -> VisitorResult<Script> {
-        let mut script = Script::new();
-        for cmd in ctx.command_all() {
-            script.commands.push(self.command(&*cmd)?)
+    fn add_global(&mut self, name: &str, t: &Type) -> Result<(), String> {
+        if self.global_vars.contains_key(name) {
+            return Err(format!("Global variable '{}' already exists", name));
         }
 
-        Ok(script)
+        self.global_vars.insert(name.to_string(), t.clone());
+
+        Ok(())
     }
 
-    fn command(&self, ctx: &CommandContextAll) -> VisitorResult<Command> {
+    fn script(&mut self, ctx: &ScriptContextAll) -> VisitorResult<Script> {
+        let commands = ctx
+            .command_all()
+            .iter()
+            .map(|cmd| self.command(&*cmd))
+            .collect::<VisitorResult<Vec<Command>>>()?;
+
+        Ok(Script {
+            commands: commands,
+            global_vars: self.global_vars.clone(),
+        })
+    }
+
+    fn command(&mut self, ctx: &CommandContextAll) -> VisitorResult<Command> {
         if ctx.cmd_assert().is_some() {
             Ok(Command::Assert(self.term(&*ctx.term(0).unwrap())?))
         } else if ctx.cmd_declareFun().is_some() {
             let name = self.symbol(&*ctx.symbol(0).unwrap())?;
             let sorts = &ctx.sort_all();
 
-            let arg_sorts: VisitorResult<Vec<Sort>> = sorts[..sorts.len() - 1]
+            let arg_sorts: Vec<Sort> = sorts[..sorts.len() - 1]
                 .iter()
-                .map(|sort| -> VisitorResult<Sort> { self.sort(&*sort) })
-                .collect();
+                .map(|sort| self.sort(&*sort))
+                .collect::<VisitorResult<Vec<Sort>>>()?;
 
             let return_sort = self.sort(&*sorts.last().unwrap())?;
+            let fun_type = Type::from(arg_sorts.as_slice(), &return_sort);
 
-            Ok(Command::DeclareFun(name, arg_sorts?, return_sort))
+            if let Err(msg) = self.add_global(name.as_str(), &fun_type) {
+                return visitor_error!(msg.as_str(), ctx);
+            }
+
+            Ok(Command::DeclareFun(name, arg_sorts, return_sort, fun_type))
         } else if ctx.cmd_checkSat().is_some() {
             Ok(Command::CheckSat)
         } else if ctx.cmd_getModel().is_some() {
@@ -371,7 +444,17 @@ impl Listener {
 
             Ok(Identifier::Id(id))
         } else if let Some(symbol) = ctx.symbol() {
-            Ok(Identifier::Id(self.symbol(&*symbol)?))
+            let sym = self.symbol(&*symbol)?;
+
+            if let Some(t) = self.global_vars.get(&sym) {
+                Ok(Identifier::Var(Var {
+                    name: sym,
+                    global: true,
+                    t: t.clone(),
+                }))
+            } else {
+                Ok(Identifier::Id(sym))
+            }
         } else {
             visitor_error!("Unsupported identifier", ctx)
         }
@@ -452,7 +535,7 @@ pub fn parse(script: &str) -> Result<Script, String> {
     parser.add_error_listener(Box::new(PanicErrorListener {}));
     let result = parser.start();
     assert!(result.is_ok());
-    let listener = parser.remove_parse_listener(listener_id);
+    let mut listener = parser.remove_parse_listener(listener_id);
 
     let script_result = listener.script(&*result.unwrap().script().unwrap());
 

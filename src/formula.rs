@@ -21,16 +21,6 @@ impl std::fmt::Display for ResultKind {
     }
 }
 
-#[derive(Debug)]
-pub enum Type {
-    Int,
-    Bool,
-    Real,
-    String,
-    Fun(String),
-    Other(String),
-}
-
 /**
  * Simplified version of [Script] with some assumptions.
  *
@@ -69,7 +59,6 @@ impl Formula {
         let mut status = None;
         let mut smt_lib_version = None;
         let mut constraints: Vec<Term> = Vec::new();
-        let mut free_vars: HashMap<String, Type> = HashMap::new();
         let mut commands: Vec<Command> = Vec::new();
 
         let mut check_sat_seen = false;
@@ -78,34 +67,7 @@ impl Formula {
             use Command::*;
             match command {
                 Assert(term) => constraints.push(term.clone()),
-                // TODO collect free variables
-                DeclareFun(name, args, result) => {
-                    if free_vars.contains_key(name) {
-                        return Err(format!("Duplicate variable name: '{}'", name));
-                    }
-
-                    let fun_type;
-
-                    if args.is_empty() {
-                        fun_type = match result.to_string().as_str() {
-                            "Int" => Type::Int,
-                            "Bool" => Type::Bool,
-                            "Real" => Type::Real,
-                            "String" => Type::String,
-                            s => Type::Other(s.to_string()),
-                        };
-                    } else {
-                        fun_type = Type::Fun(format!(
-                            "{} {}",
-                            args.iter()
-                                .fold(String::new(), |a, b| format!("{} {}", a, b)),
-                            result
-                        ));
-                    }
-
-                    free_vars.insert(name.clone(), fun_type);
-                    commands.push(command.clone());
-                }
+                DeclareFun(_, _, _, _) => commands.push(command.clone()),
                 CheckSat => {
                     if check_sat_seen {
                         return Err("Multiple check-sat commands".to_string());
@@ -150,7 +112,7 @@ impl Formula {
             constraints: constraints,
             commands: commands,
             logic: logic,
-            free_vars: free_vars,
+            free_vars: script.global_vars.clone(),
             status: status,
             smt_lib_version: smt_lib_version,
         })
