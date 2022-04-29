@@ -67,7 +67,12 @@ impl Formula {
         for command in &script.commands {
             use Command::*;
             match command {
-                Assert(term) => constraints.push(term.clone()),
+                Assert(term) => {
+                    if check_sat_seen {
+                        return Err("Assertion after check-sat command".to_string());
+                    }
+                    constraints.push(term.clone())
+                }
                 DeclareFun(_, _, _) => commands.push(command.clone()),
                 CheckSat => {
                     if check_sat_seen {
