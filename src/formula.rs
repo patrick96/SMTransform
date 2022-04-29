@@ -2,7 +2,7 @@ use crate::parser::*;
 
 use std::collections::HashMap;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ResultKind {
     SAT,
     UNSAT,
@@ -28,14 +28,15 @@ impl std::fmt::Display for ResultKind {
  * * `(set-info :status ...)` is present
  * * Sequence of assertions without assertion stacks followed by a `check-sat` query
  */
+#[derive(Clone)]
 pub struct Formula {
-    constraints: Vec<Term>,
+    pub constraints: Vec<Term>,
     pub free_vars: HashMap<String, Type>,
 
     /**
      * Commands from the original [Script] that have to be emitted as-is
      */
-    commands: Vec<Command>,
+    pub commands: Vec<Command>,
 
     /**
      * Set from (set-logic ...)
@@ -67,7 +68,7 @@ impl Formula {
             use Command::*;
             match command {
                 Assert(term) => constraints.push(term.clone()),
-                DeclareFun(_, _, _, _) => commands.push(command.clone()),
+                DeclareFun(_, _, _) => commands.push(command.clone()),
                 CheckSat => {
                     if check_sat_seen {
                         return Err("Multiple check-sat commands".to_string());

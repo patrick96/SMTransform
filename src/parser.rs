@@ -61,9 +61,9 @@ impl Type {
 
 #[derive(Debug, Clone)]
 pub struct Var {
-    name: String,
-    global: bool,
-    t: Type,
+    pub name: String,
+    pub global: bool,
+    pub t: Type,
 }
 
 impl std::fmt::Display for Var {
@@ -203,7 +203,7 @@ impl std::fmt::Display for Attribute {
 #[derive(Debug, Clone)]
 pub enum Command {
     Assert(Term),
-    DeclareFun(Symbol, Vec<Sort>, Sort, Type),
+    DeclareFun(Symbol, Vec<Sort>, Sort),
     CheckSat,
     GetModel,
     Exit,
@@ -220,7 +220,7 @@ impl std::fmt::Display for Command {
 
         match self {
             Assert(assert) => write!(f, "(assert {})", assert),
-            DeclareFun(name, arg_sorts, return_sort, _) => {
+            DeclareFun(name, arg_sorts, return_sort) => {
                 write!(f, "(declare-fun {} (", name)?;
 
                 for (pos, arg_sort) in arg_sorts.iter().enumerate() {
@@ -329,7 +329,7 @@ impl Listener {
                 return visitor_error!(msg.as_str(), ctx);
             }
 
-            Ok(Command::DeclareFun(name, arg_sorts, return_sort, fun_type))
+            Ok(Command::DeclareFun(name, arg_sorts, return_sort))
         } else if ctx.cmd_checkSat().is_some() {
             Ok(Command::CheckSat)
         } else if ctx.cmd_getModel().is_some() {

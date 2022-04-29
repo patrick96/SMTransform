@@ -5,6 +5,8 @@ use std::fs;
 
 mod formula;
 mod parser;
+mod transformations;
+mod var_generator;
 
 use crate::parser::Command;
 
@@ -27,9 +29,11 @@ fn main() -> Result<(), String> {
     }
 
     let formula = Formula::from(&script)?;
-
     dbg!(&formula.free_vars);
 
-    println!("{}", formula.to_script().to_string());
+    let transformed = transformations::replace_variable(&formula)?;
+    dbg!(&transformed.free_vars);
+
+    println!("{}", transformed.to_script().to_string());
     Ok(())
 }
