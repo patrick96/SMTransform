@@ -6,8 +6,8 @@ pub struct VariableGenerator {
 }
 
 impl VariableGenerator {
-    pub fn new() -> VariableGenerator {
-        VariableGenerator {
+    pub fn new() -> Self {
+        Self {
             taken: HashSet::new(),
             counter: 0,
         }

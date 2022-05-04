@@ -28,7 +28,7 @@ pub type HexDecimal = String;
 pub type Binary = String;
 pub type Keyword = String;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     Int,
     Bool,
@@ -99,6 +99,15 @@ impl From<Var> for Identifier {
 pub struct Sort {
     name: Identifier,
     sorts: Vec<Sort>,
+}
+
+impl Sort {
+    pub fn new(name: Identifier, sorts: &[Sort]) -> Self {
+        Self {
+            name,
+            sorts: Vec::from(sorts),
+        }
+    }
 }
 
 impl std::fmt::Display for Sort {

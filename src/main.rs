@@ -31,7 +31,10 @@ fn main() -> Result<(), String> {
     let formula = Formula::from(&script)?;
     dbg!(&formula.free_vars);
 
-    let transformed = transformations::replace_variable(&formula)?;
+    let mut transformed = transformations::replace_variable(&formula)?;
+    dbg!(&transformed.free_vars);
+
+    transformed = transformations::do_fusion(&transformed)?;
     dbg!(&transformed.free_vars);
 
     println!("{}", transformed.to_script().to_string());
