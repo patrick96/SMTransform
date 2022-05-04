@@ -89,6 +89,12 @@ impl std::fmt::Display for Identifier {
     }
 }
 
+impl From<Var> for Identifier {
+    fn from(var: Var) -> Self {
+        Identifier::Var(var)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Sort {
     name: Identifier,
@@ -162,6 +168,24 @@ impl std::fmt::Display for Term {
                 write!(f, ")")
             }
         }
+    }
+}
+
+impl From<SpecConstant> for Term {
+    fn from(c: SpecConstant) -> Self {
+        Term::SpecConstant(c)
+    }
+}
+
+impl From<Identifier> for Term {
+    fn from(id: Identifier) -> Self {
+        Term::Identifier(id)
+    }
+}
+
+impl From<Var> for Term {
+    fn from(var: Var) -> Self {
+        Term::Identifier(var.into())
     }
 }
 
@@ -550,7 +574,7 @@ pub fn parse(script: &str) -> Result<Script, String> {
             if i != interval.a {
                 token_string.push(' ');
             }
-            token_string += input.get(i).get_text();
+            token_string.push_str(input.get(i).get_text());
         }
 
         format!(

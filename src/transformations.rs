@@ -54,16 +54,18 @@ impl VariableReplacer {
         self.new.constraints.push(Term::Op(
             Identifier::Id("=".to_string()),
             Vec::from([
-                Term::Identifier(Identifier::Var(Var {
+                Var {
                     name: self.target.clone(),
                     global: true,
                     t: target_type.clone(),
-                })),
-                Term::Identifier(Identifier::Var(Var {
+                }
+                .into(),
+                Var {
                     name: self.replacement.clone(),
                     global: true,
                     t: target_type.clone(),
-                })),
+                }
+                .into(),
             ]),
         ));
     }
@@ -72,34 +74,29 @@ impl VariableReplacer {
         use Term::*;
         match term {
             SpecConstant(_) => term,
-            Identifier(ident) => Identifier(self.visit_identifier(ident)),
+            Identifier(ident) => self.visit_identifier(ident),
             Op(op, terms) => Op(
-                self.visit_identifier(op),
+                op,
                 terms.iter().map(|t| self.visit_term(t.clone())).collect(),
             ),
         }
     }
 
-    fn visit_identifier(&self, ident: Identifier) -> Identifier {
+    fn visit_identifier(&self, ident: Identifier) -> Term {
         use Identifier::*;
         match ident {
-            Id(_) => ident,
-            Var(ref var) => {
-                if var.global && var.name == self.target {
-                    // TODO use a single randomness generator and set seed
-                    let mut rng = rand::thread_rng();
-                    if rng.gen::<bool>() {
-                        let mut new_var = var.clone();
-                        new_var.name = self.replacement.clone();
-                        Var(new_var)
-                    } else {
-                        ident
-                    }
-                } else {
-                    ident
-                }
-            }
+            Id(_) => ident.into(),
+            Var(var) => self.visit_variable(var),
         }
+    }
+
+    fn visit_variable(&self, mut var: Var) -> Term {
+        // TODO use a single randomness generator and set seed
+        let mut rng = rand::thread_rng();
+        if var.global && var.name == self.target && rng.gen::<bool>() {
+            var.name = self.replacement.clone();
+        }
+        var.into()
     }
 }
 
