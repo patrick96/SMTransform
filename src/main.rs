@@ -11,6 +11,7 @@ mod var_generator;
 use crate::parser::Command;
 
 use crate::formula::Formula;
+use serde_json::json;
 
 fn main() -> Result<(), String> {
     let args: Vec<String> = env::args().collect();
@@ -29,14 +30,56 @@ fn main() -> Result<(), String> {
     }
 
     let formula = Formula::from(&script)?;
-    dbg!(&formula.free_vars);
 
     let mut transformed = transformations::replace_variable(&formula)?;
-    dbg!(&transformed.free_vars);
 
+    transformed = transformations::replace_variable(&transformed)?;
+    transformed = transformations::replace_variable(&transformed)?;
+    transformed = transformations::replace_variable(&transformed)?;
     transformed = transformations::do_fusion(&transformed)?;
-    dbg!(&transformed.free_vars);
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::replace_variable(&transformed)?;
+    transformed = transformations::replace_variable(&transformed)?;
+    transformed = transformations::replace_variable(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::replace_variable(&transformed)?;
+    transformed = transformations::replace_variable(&transformed)?;
+    transformed = transformations::replace_variable(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::replace_variable(&transformed)?;
+    transformed = transformations::replace_variable(&transformed)?;
+    transformed = transformations::replace_variable(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
+    transformed = transformations::do_fusion(&transformed)?;
 
-    println!("{}", transformed.to_script().to_string());
+    let j = json!({
+        "smtlib": transformed.to_script().to_string(),
+        "status": transformed.status.to_string(),
+    });
+
+    println!("{}", j);
+
     Ok(())
 }

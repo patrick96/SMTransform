@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import fileinput
 import json
 import argparse
 import subprocess
@@ -11,7 +12,7 @@ from typing import Optional
 
 # TODO post-process RunResult:
 # TODO detect sanitizer error
-# TODO detect correct/wrong output
+# TODO detect correct/wrong output (requires oracle)
 # TODO may require per-solver class
 # TODO detect solver (error ...) messages
 
@@ -58,17 +59,18 @@ class RunResult:
             return "success"
 
 
-def run_cmd(cmd):
+def run_cmd(cmd, input):
     assert cmd, "No command given"
 
     try:
-        proc = subprocess.run(cmd, timeout=1, capture_output=True)
+        proc = subprocess.run(
+            cmd, timeout=10, capture_output=True, input=input, text=True)
         code = proc.returncode
 
         sig = signal.Signals(abs(code)).name if code < 0 else None
 
-        stdout = list(map(lambda l: l.decode(), proc.stdout.splitlines()))
-        stderr = list(map(lambda l: l.decode(), proc.stderr.splitlines()))
+        stdout = list(proc.stdout.splitlines())
+        stderr = list(proc.stderr.splitlines())
 
         return RunResult(cmd=cmd,
                          stdout=stdout,
@@ -104,6 +106,17 @@ if __name__ == "__main__":
         eprint("No command given")
         sys.exit(1)
 
-    result = run_cmd(cmd)
-    result.print()
-    print(json.dumps(result, default=lambda o: o.__dict__, indent=4))
+    for line in fileinput.input(['-']):
+        j = json.loads(line)
+
+        result = run_cmd(cmd, j['smtlib'])
+
+        if result.type() != 'success' or result.stdout != [j['status']]:
+            if result.type() == 'timeout':
+                print('timeout')
+                continue
+
+            print(j['smtlib'])
+            result.print()
+            print(json.dumps(result, default=lambda o: o.__dict__, indent=4))
+            sys.exit(1)
