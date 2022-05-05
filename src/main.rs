@@ -31,55 +31,19 @@ fn main() -> Result<(), String> {
 
     let formula = Formula::from(&script)?;
 
-    let mut transformed = transformations::replace_variable(&formula)?;
+    let mut current = formula;
 
-    transformed = transformations::replace_variable(&transformed)?;
-    transformed = transformations::replace_variable(&transformed)?;
-    transformed = transformations::replace_variable(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::replace_variable(&transformed)?;
-    transformed = transformations::replace_variable(&transformed)?;
-    transformed = transformations::replace_variable(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::replace_variable(&transformed)?;
-    transformed = transformations::replace_variable(&transformed)?;
-    transformed = transformations::replace_variable(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::replace_variable(&transformed)?;
-    transformed = transformations::replace_variable(&transformed)?;
-    transformed = transformations::replace_variable(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
-    transformed = transformations::do_fusion(&transformed)?;
+    for _ in 1..10 {
+        current = transformations::replace_variable(&current)?;
+        current = transformations::do_fusion(&current)?;
 
-    let j = json!({
-        "smtlib": transformed.to_script().to_string(),
-        "status": transformed.status.to_string(),
-    });
+        let j = json!({
+            "smtlib": current.to_script().to_string(),
+            "status": current.status.to_string(),
+        });
 
-    println!("{}", j);
+        println!("{}", j);
+    }
 
     Ok(())
 }
