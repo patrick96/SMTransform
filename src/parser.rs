@@ -244,7 +244,6 @@ pub enum Command {
     SetLogic(Symbol),
     // Generic command with only a single string (e.g. (reset))
     Generic(String),
-    Unknown(String),
 }
 
 impl std::fmt::Display for Command {
@@ -271,7 +270,6 @@ impl std::fmt::Display for Command {
             SetInfo(attr) => write!(f, "(set-info {})", attr),
             SetLogic(s) => write!(f, "(set-logic {})", s),
             Generic(s) => write!(f, "({})", s),
-            Unknown(s) => write!(f, "(unknown: {})", s),
         }
     }
 }
@@ -378,7 +376,7 @@ impl Listener {
         } else if ctx.get_child_count() == 3 {
             Ok(Command::Generic(ctx.get_child(1).unwrap().get_text()))
         } else {
-            Ok(Command::Unknown(ctx.get_text()))
+            visitor_error!("Unsupported command", ctx)
         }
     }
 

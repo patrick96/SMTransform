@@ -108,7 +108,7 @@ impl Formula {
                     _ => (),
                 },
                 SetLogic(symbol) => logic = Some(symbol.clone()),
-                Generic(str) | Unknown(str) => {
+                Generic(str) => {
                     return Err(format!("Unsupported command: '{}'", str))
                 }
             }
