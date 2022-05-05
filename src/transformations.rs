@@ -48,7 +48,7 @@ trait Visitor {
  *
  * z = x + y (x = z - y, y = z - x)
  * z = x * y (x = z div y, y = z div x)
- * z = x - y (x = z + y, y = z + x)
+ * z = x - y (x = z + y, y = x - z)
  */
 struct Fusion {
     original: Formula,
@@ -58,7 +58,57 @@ struct Fusion {
     selected_fusion: usize,
 }
 
-static FUSIONS: [&str; 3] = ["-", "div", "+"];
+static FUSIONS: [fn(&(String, String), &String, &String) -> Term; 3] = [
+    |targets, new_variable, replacee| fusion_symmetric(targets, new_variable, replacee, "-"),
+    |targets, new_variable, replacee| fusion_symmetric(targets, new_variable, replacee, "div"),
+    fusion_sub,
+];
+
+/**
+ * Fusions where both inverse functions are 'replacee = z op other'
+ */
+fn fusion_symmetric(
+    targets: &(String, String),
+    new_variable: &String,
+    replacee: &String,
+    op: &str,
+) -> Term {
+    let z = Var::new(new_variable.clone(), Type::Int);
+
+    let other;
+
+    if replacee == &targets.0 {
+        other = targets.1.clone();
+    } else {
+        other = targets.0.clone();
+    }
+
+    Term::Op(
+        Identifier::Id(String::from(op)),
+        vec![z.into(), Var::new(other, Type::Int).into()],
+    )
+}
+
+/**
+ * For z = x - y (x = z + y, y = x - z)
+ */
+fn fusion_sub(targets: &(String, String), new_variable: &String, replacee: &String) -> Term {
+    let z = Var::new(new_variable.clone(), Type::Int);
+
+    if replacee == &targets.0 {
+        // x = z + y
+        Term::Op(
+            Identifier::Id(String::from("+")),
+            vec![z.into(), Var::new(targets.1.clone(), Type::Int).into()],
+        )
+    } else {
+        // y = x - z
+        Term::Op(
+            Identifier::Id(String::from("-")),
+            vec![Var::new(targets.0.clone(), Type::Int).into(), z.into()],
+        )
+    }
+}
 
 impl Fusion {
     fn new(formula: Formula, targets: (String, String), new_variable: String) -> Self {
@@ -130,31 +180,7 @@ impl Fusion {
             && (var.name == self.targets.0 || var.name == self.targets.1)
             && rng.gen::<bool>()
         {
-            let other;
-
-            if var.name == self.targets.0 {
-                other = self.targets.1.clone();
-            } else {
-                other = self.targets.0.clone();
-            }
-
-            Term::Op(
-                Identifier::Id(FUSIONS[self.selected_fusion].to_string()),
-                Vec::from([
-                    Var {
-                        name: self.new_variable.clone(),
-                        global: true,
-                        t: Type::Int,
-                    }
-                    .into(),
-                    Var {
-                        name: other,
-                        global: true,
-                        t: Type::Int,
-                    }
-                    .into(),
-                ]),
-            )
+            FUSIONS[self.selected_fusion](&self.targets, &self.new_variable, &var.name)
         } else {
             var.into()
         }

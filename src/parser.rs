@@ -70,6 +70,16 @@ pub struct Var {
     pub t: Type,
 }
 
+impl Var {
+    pub fn new(name: String, t: Type) -> Self {
+        Self {
+            name,
+            global: true,
+            t,
+        }
+    }
+}
+
 impl std::fmt::Display for Var {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)
