@@ -73,7 +73,7 @@ impl Formula {
                     }
                     constraints.push(term.clone())
                 }
-                DeclareFun(_, _, _) => commands.push(command.clone()),
+                DeclareFun(_, _, _) | DefineFun(_, _, _, _) => commands.push(command.clone()),
                 CheckSat => {
                     if check_sat_seen {
                         return Err("Multiple check-sat commands".to_string());

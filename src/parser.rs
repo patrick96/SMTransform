@@ -251,6 +251,7 @@ impl std::fmt::Display for Attribute {
 pub enum Command {
     Assert(Term),
     DeclareFun(Symbol, Vec<Sort>, Sort),
+    DefineFun(Symbol, Vec<(Symbol, Sort)>, Sort, Term),
     CheckSat,
     GetModel,
     Exit,
@@ -277,6 +278,18 @@ impl std::fmt::Display for Command {
                 }
 
                 write!(f, ") {})", return_sort)
+            }
+            DefineFun(name, args, return_sort, term) => {
+                write!(f, "(define-fun {} (", name)?;
+
+                for (pos, (arg_name, arg_sort)) in args.iter().enumerate() {
+                    if pos > 0 {
+                        write!(f, " ")?;
+                    }
+                    write!(f, "({} {})", arg_name, arg_sort)?;
+                }
+
+                write!(f, ") {} {})", return_sort, term)
             }
             CheckSat => write!(f, "(check-sat)"),
             GetModel => write!(f, "(get-model)"),
@@ -377,6 +390,26 @@ impl Listener {
             }
 
             Ok(Command::DeclareFun(name, arg_sorts, return_sort))
+        } else if ctx.cmd_defineFun().is_some() {
+            let def_ctx = &*ctx.function_def().unwrap();
+
+            let name = self.symbol(&*def_ctx.symbol().unwrap())?;
+
+            let args = def_ctx
+                .sorted_var_all()
+                .iter()
+                .map(|sorted_var| self.sorted_var(&*sorted_var))
+                .collect::<VisitorResult<Vec<(Symbol, Sort)>>>()?;
+
+            let local_vars = HashMap::from_iter(
+                args.iter()
+                    .map(|(sym, sort)| (sym.clone(), Type::from(&[], sort))),
+            );
+
+            let return_sort = self.sort(&*def_ctx.sort().unwrap())?;
+            let term = self.term(&*def_ctx.term().unwrap(), local_vars)?;
+
+            Ok(Command::DefineFun(name, args, return_sort, term))
         } else if ctx.cmd_checkSat().is_some() {
             Ok(Command::CheckSat)
         } else if ctx.cmd_getModel().is_some() {
@@ -394,6 +427,13 @@ impl Listener {
         } else {
             visitor_error!("Unsupported command", ctx)
         }
+    }
+
+    fn sorted_var(&self, ctx: &Sorted_varContextAll) -> VisitorResult<(Symbol, Sort)> {
+        Ok((
+            self.symbol(&*ctx.symbol().unwrap())?,
+            self.sort(&*ctx.sort().unwrap())?,
+        ))
     }
 
     fn term(
