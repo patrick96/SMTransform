@@ -55,6 +55,7 @@ struct Fusion {
     new: Formula,
     targets: (String, String),
     new_variable: String,
+    selected_fusion: usize,
 }
 
 static FUSIONS: [&str; 3] = ["-", "div", "+"];
@@ -66,10 +67,15 @@ impl Fusion {
             new: formula,
             targets,
             new_variable,
+            selected_fusion: 0,
         }
     }
 
     fn run(&mut self) {
+        // TODO use a single randomness generator and set seed
+        let mut rng = rand::thread_rng();
+        self.selected_fusion = rng.gen_range(0..FUSIONS.len());
+
         self.new.constraints = self
             .original
             .constraints
@@ -133,7 +139,7 @@ impl Fusion {
             }
 
             Term::Op(
-                Identifier::Id(FUSIONS[rng.gen_range(0..FUSIONS.len())].to_string()),
+                Identifier::Id(FUSIONS[self.selected_fusion].to_string()),
                 Vec::from([
                     Var {
                         name: self.new_variable.clone(),
