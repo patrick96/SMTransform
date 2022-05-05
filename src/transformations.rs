@@ -10,6 +10,13 @@ trait Visitor {
             SpecConstant(c) => self.visit_const(c),
             Identifier(ident) => self.visit_identifier(ident),
             Op(op, terms) => self.visit_op(op, terms),
+            Let(bindings, subterm) => {
+                for (_, term) in bindings {
+                    self.visit_term(term)
+                }
+
+                self.visit_term(subterm)
+            }
         }
     }
 
@@ -91,6 +98,13 @@ impl Fusion {
             Op(op, terms) => Op(
                 op,
                 terms.iter().map(|t| self.visit_term(t.clone())).collect(),
+            ),
+            Let(bindings, subterm) => Let(
+                bindings
+                    .iter()
+                    .map(|(sym, term)| (sym.clone(), self.visit_term(term.clone())))
+                    .collect(),
+                Box::new(self.visit_term(*subterm)),
             ),
         }
     }
@@ -216,6 +230,13 @@ impl VariableReplacer {
             Op(op, terms) => Op(
                 op,
                 terms.iter().map(|t| self.visit_term(t.clone())).collect(),
+            ),
+            Let(bindings, subterm) => Let(
+                bindings
+                    .iter()
+                    .map(|(sym, term)| (sym.clone(), self.visit_term(term.clone())))
+                    .collect(),
+                Box::new(self.visit_term(*subterm)),
             ),
         }
     }

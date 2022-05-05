@@ -36,6 +36,10 @@ pub enum Type {
     String,
     Fun(String),
     Other(String),
+    /*
+     * Used for variable definitions without a specified type (e.g. let-bindings)
+     */
+    Unknown,
 }
 
 impl Type {
@@ -158,6 +162,7 @@ pub enum Term {
     SpecConstant(SpecConstant),
     Identifier(Identifier),
     Op(Identifier, Vec<Term>),
+    Let(Vec<(Symbol, Term)>, Box<Term>),
 }
 
 impl std::fmt::Display for Term {
@@ -175,6 +180,15 @@ impl std::fmt::Display for Term {
                     term.fmt(f)?;
                 }
                 write!(f, ")")
+            }
+            Let(bindings, subterm) => {
+                write!(f, "(let (")?;
+
+                for (sym, term) in bindings {
+                    write!(f, "({} {})", sym, term)?;
+                }
+
+                write!(f, ") {})", *subterm)
             }
         }
     }
@@ -343,7 +357,9 @@ impl Listener {
 
     fn command(&mut self, ctx: &CommandContextAll) -> VisitorResult<Command> {
         if ctx.cmd_assert().is_some() {
-            Ok(Command::Assert(self.term(&*ctx.term(0).unwrap())?))
+            Ok(Command::Assert(
+                self.term(&*ctx.term(0).unwrap(), HashMap::new())?,
+            ))
         } else if ctx.cmd_declareFun().is_some() {
             let name = self.symbol(&*ctx.symbol(0).unwrap())?;
             let sorts = &ctx.sort_all();
@@ -380,7 +396,11 @@ impl Listener {
         }
     }
 
-    fn term(&self, ctx: &TermContextAll) -> VisitorResult<Term> {
+    fn term(
+        &self,
+        ctx: &TermContextAll,
+        mut local_vars: HashMap<String, Type>,
+    ) -> VisitorResult<Term> {
         /*
          * term
          *     : spec_constant
@@ -400,20 +420,49 @@ impl Listener {
             Ok(Term::SpecConstant(self.spec_constant(&*spec_constant)?))
         } else if let Some(qual_identifier) = ctx.qual_identifier() {
             if num_par_open >= 1 && num_par_close >= 1 {
-                let op = self.qual_identifier(&*qual_identifier)?;
-                let mut terms = Vec::new();
+                let op = self.qual_identifier(&*qual_identifier, &local_vars)?;
 
-                for term in &ctx.term_all() {
-                    terms.push(self.term(&*term)?);
-                }
+                let terms = ctx
+                    .term_all()
+                    .iter()
+                    .map(|term| self.term(&*term, local_vars.clone()))
+                    .collect::<VisitorResult<Vec<Term>>>()?;
 
                 Ok(Term::Op(op, terms))
             } else {
-                Ok(Term::Identifier(self.qual_identifier(&*qual_identifier)?))
+                Ok(Term::Identifier(
+                    self.qual_identifier(&*qual_identifier, &local_vars)?,
+                ))
             }
+        } else if ctx.GRW_Let().is_some() {
+            let bindings = ctx
+                .var_binding_all()
+                .iter()
+                .map(|var_binding| self.var_binding(var_binding, local_vars.clone()))
+                .collect::<VisitorResult<Vec<(Symbol, Term)>>>()?;
+
+            for (name, _) in &bindings {
+                local_vars.insert(name.clone(), Type::Unknown);
+            }
+
+            Ok(Term::Let(
+                bindings,
+                Box::new(self.term(&*ctx.term(0).unwrap(), local_vars)?),
+            ))
         } else {
             visitor_error!("Unsupported term", ctx)
         }
+    }
+
+    fn var_binding(
+        &self,
+        ctx: &Var_bindingContextAll,
+        local_vars: HashMap<String, Type>,
+    ) -> VisitorResult<(Symbol, Term)> {
+        Ok((
+            self.symbol(&*ctx.symbol().unwrap())?,
+            self.term(&*ctx.term().unwrap(), local_vars)?,
+        ))
     }
 
     fn spec_constant(&self, ctx: &Spec_constantContextAll) -> VisitorResult<SpecConstant> {
@@ -450,17 +499,25 @@ impl Listener {
         Ok(ctx.get_text())
     }
 
-    fn qual_identifier(&self, ctx: &Qual_identifierContextAll) -> VisitorResult<Identifier> {
+    fn qual_identifier(
+        &self,
+        ctx: &Qual_identifierContextAll,
+        local_vars: &HashMap<String, Type>,
+    ) -> VisitorResult<Identifier> {
         if ctx.GRW_As().is_some() {
             visitor_error!("'as' identifiers no supported", ctx)
         } else if let Some(id) = ctx.identifier() {
-            self.identifier(&*id)
+            self.identifier(&*id, local_vars)
         } else {
             visitor_error!("Unsupported qual_identifier", ctx)
         }
     }
 
-    fn identifier(&self, ctx: &IdentifierContextAll) -> VisitorResult<Identifier> {
+    fn identifier(
+        &self,
+        ctx: &IdentifierContextAll,
+        local_vars: &HashMap<String, Type>,
+    ) -> VisitorResult<Identifier> {
         if ctx.GRW_Underscore().is_some() {
             let symbol = self.symbol(&*ctx.symbol().unwrap())?;
 
@@ -477,7 +534,13 @@ impl Listener {
         } else if let Some(symbol) = ctx.symbol() {
             let sym = self.symbol(&*symbol)?;
 
-            if let Some(t) = self.global_vars.get(&sym) {
+            if let Some(t) = local_vars.get(&sym) {
+                Ok(Identifier::Var(Var {
+                    name: sym,
+                    global: false,
+                    t: t.clone(),
+                }))
+            } else if let Some(t) = self.global_vars.get(&sym) {
                 Ok(Identifier::Var(Var {
                     name: sym,
                     global: true,
@@ -497,7 +560,7 @@ impl Listener {
 
     fn sort(&self, ctx: &SortContextAll) -> VisitorResult<Sort> {
         Ok(Sort {
-            name: self.identifier(&*ctx.identifier().unwrap())?,
+            name: self.identifier(&*ctx.identifier().unwrap(), &HashMap::new())?,
             sorts: ctx
                 .sort_all()
                 .iter()
@@ -578,10 +641,16 @@ pub fn parse(script: &str) -> Result<Script, String> {
         let mut token_string = String::new();
 
         for i in interval.a..=interval.b {
-            if i != interval.a {
+            let token = input.get(i);
+            let token_type = token.get_token_type();
+
+            if i != interval.a
+                && token_type != smtlibv2lexer::ParClose
+                && input.get(i - 1).get_token_type() != smtlibv2lexer::ParOpen
+            {
                 token_string.push(' ');
             }
-            token_string.push_str(input.get(i).get_text());
+            token_string.push_str(token.get_text());
         }
 
         format!(
