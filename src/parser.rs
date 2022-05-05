@@ -373,6 +373,16 @@ impl Listener {
             Ok(Command::Assert(
                 self.term(&*ctx.term(0).unwrap(), HashMap::new())?,
             ))
+        } else if ctx.cmd_declareConst().is_some() {
+            let name = self.symbol(&*ctx.symbol(0).unwrap())?;
+            let return_sort = self.sort(&*ctx.sort(0).unwrap())?;
+            let fun_type = Type::from(&[], &return_sort);
+
+            if let Err(msg) = self.add_global(name.as_str(), &fun_type) {
+                return visitor_error!(msg.as_str(), ctx);
+            }
+
+            Ok(Command::DeclareFun(name, Vec::new(), return_sort))
         } else if ctx.cmd_declareFun().is_some() {
             let name = self.symbol(&*ctx.symbol(0).unwrap())?;
             let sorts = &ctx.sort_all();
