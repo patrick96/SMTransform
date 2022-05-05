@@ -46,7 +46,7 @@ pub struct Formula {
     /**
      * Set from (set-info :status ...)
      */
-    status: Option<ResultKind>,
+    pub status: ResultKind,
 
     /**
      * Set from (set-info :smt-lib-version ...)
@@ -57,7 +57,7 @@ pub struct Formula {
 impl Formula {
     pub fn from(script: &Script) -> Result<Formula, String> {
         let mut logic = None;
-        let mut status = None;
+        let mut status = ResultKind::UNKNOWN;
         let mut smt_lib_version = None;
         let mut constraints: Vec<Term> = Vec::new();
         let mut commands: Vec<Command> = Vec::new();
@@ -88,12 +88,12 @@ impl Formula {
                     ":status" => {
                         if let Some(attr_value) = &attr.value {
                             let status_str = attr_value.to_string();
-                            status = Some(match status_str.as_str() {
+                            status = match status_str.as_str() {
                                 "sat" => ResultKind::SAT,
                                 "unsat" => ResultKind::UNSAT,
                                 "unknown" => ResultKind::UNKNOWN,
                                 s => return Err(format!("Unsupported status: '{}'", s)),
-                            })
+                            }
                         } else {
                             return Err(format!("No value for attribute: '{}'", attr));
                         }
@@ -141,14 +141,12 @@ impl Formula {
             cmds.push(Command::SetLogic(logic.to_string()));
         }
 
-        if let Some(status) = &self.status {
-            cmds.push(Command::SetInfo(Attribute {
-                keyword: ":status".into(),
-                value: Some(AttributeValue::SpecConstant(SpecConstant::String(
-                    status.to_string(),
-                ))),
-            }));
-        }
+        cmds.push(Command::SetInfo(Attribute {
+            keyword: ":status".into(),
+            value: Some(AttributeValue::SpecConstant(SpecConstant::String(
+                self.status.to_string(),
+            ))),
+        }));
 
         cmds.extend(self.commands.clone());
 
