@@ -37,9 +37,11 @@ trait Visitor {
 }
 
 /**
- * Given targets (x, y) and new variable z
+ * Given targets (x, y) and new variable z applies one of the following fusions:
  *
- * Replaces x with z - y and y with z - x
+ * z = x + y (x = z - y, y = z - x)
+ * z = x * y (x = z div y, y = z div x)
+ * z = x - y (x = z + y, y = z + x)
  */
 struct Fusion {
     original: Formula,
@@ -47,6 +49,8 @@ struct Fusion {
     targets: (String, String),
     new_variable: String,
 }
+
+static FUSIONS: [&str; 3] = ["-", "div", "+"];
 
 impl Fusion {
     fn new(formula: Formula, targets: (String, String), new_variable: String) -> Self {
@@ -115,7 +119,7 @@ impl Fusion {
             }
 
             Term::Op(
-                Identifier::Id("-".to_string()),
+                Identifier::Id(FUSIONS[rng.gen_range(0..FUSIONS.len())].to_string()),
                 Vec::from([
                     Var {
                         name: self.new_variable.clone(),
