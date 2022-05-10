@@ -78,6 +78,14 @@ impl Var {
             t,
         }
     }
+
+    pub fn new_local(name: String, t: Type) -> Self {
+        Self {
+            name,
+            global: false,
+            t,
+        }
+    }
 }
 
 impl std::fmt::Display for Var {
@@ -595,17 +603,9 @@ impl Listener {
             let sym = self.symbol(&*symbol)?;
 
             if let Some(t) = local_vars.get(&sym) {
-                Ok(Identifier::Var(Var {
-                    name: sym,
-                    global: false,
-                    t: t.clone(),
-                }))
+                Ok(Var::new_local(sym, t.clone()).into())
             } else if let Some(t) = self.global_vars.get(&sym) {
-                Ok(Identifier::Var(Var {
-                    name: sym,
-                    global: true,
-                    t: t.clone(),
-                }))
+                Ok(Var::new(sym, t.clone()).into())
             } else {
                 Ok(Identifier::Id(sym))
             }

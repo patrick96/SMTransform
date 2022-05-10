@@ -238,18 +238,8 @@ impl VariableReplacer {
         self.new.constraints.push(Term::Op(
             Identifier::Id("=".to_string()),
             Vec::from([
-                Var {
-                    name: self.target.clone(),
-                    global: true,
-                    t: target_type.clone(),
-                }
-                .into(),
-                Var {
-                    name: self.replacement.clone(),
-                    global: true,
-                    t: target_type.clone(),
-                }
-                .into(),
+                Var::new(self.target.clone(), target_type.clone()).into(),
+                Var::new(self.replacement.clone(), target_type.clone()).into(),
             ]),
         ));
     }
