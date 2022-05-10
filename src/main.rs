@@ -1,4 +1,5 @@
 #![feature(try_blocks)]
+#![feature(arc_unwrap_or_clone)]
 
 use std::env;
 use std::fs;

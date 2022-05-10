@@ -1,36 +1,42 @@
+use std::ops::DerefMut;
+use std::rc::Rc;
+
 use crate::formula::*;
 use crate::parser::*;
 use crate::var_generator::VariableGenerator;
 use rand::Rng;
 
 trait Visitor {
-    fn visit_term(&self, term: &mut Term) {
-        use Term::*;
-        match term {
-            SpecConstant(c) => self.visit_const(c),
-            Identifier(ident) => self.visit_identifier(ident),
-            Op(op, terms) => self.visit_op(op, terms),
-            Let(bindings, subterm) => {
-                for (_, term) in bindings {
-                    self.visit_term(term)
+    fn visit_expr(&self, expr: &mut Expr) {
+        use Expr::*;
+        match expr {
+            Const(c) => self.visit_const(c),
+            Id(ident) => self.visit_id(ident),
+            Var(var) => self.visit_variable(var),
+            Op(op, exprs) => self.visit_op(op, exprs),
+            Let(bindings, subexpr) => {
+                for (_, expr) in bindings {
+                    self.visit_expr(expr.deref_mut())
                 }
 
-                self.visit_term(subterm)
+                self.visit_expr(subexpr.deref_mut())
             }
         }
     }
 
     fn visit_const(&self, _c: &mut SpecConstant) {}
 
-    fn visit_op(&self, op: &mut Identifier, terms: &mut Vec<Term>) {
+    fn visit_op(&self, op: &mut Identifier, exprs: &mut Vec<Rc<Expr>>) {
         self.visit_op_identifier(op);
 
-        for term in terms {
-            self.visit_term(term);
+        for mut expr in exprs {
+            self.visit_expr(expr.deref_mut());
         }
     }
 
     fn visit_op_identifier(&self, _ident: &mut Identifier) {}
+
+    fn visit_id(&self, _ident: &mut String) {}
 
     fn visit_identifier(&self, ident: &mut Identifier) {
         use Identifier::*;
@@ -58,7 +64,7 @@ struct Fusion {
     selected_fusion: usize,
 }
 
-static FUSIONS: [fn(&(String, String), &String, &String) -> Term; 3] = [
+static FUSIONS: [fn(&(String, String), &String, &String) -> Expr; 3] = [
     |targets, new_variable, replacee| fusion_symmetric(targets, new_variable, replacee, "-"),
     |targets, new_variable, replacee| fusion_symmetric(targets, new_variable, replacee, "div"),
     fusion_sub,
@@ -72,7 +78,7 @@ fn fusion_symmetric(
     new_variable: &String,
     replacee: &String,
     op: &str,
-) -> Term {
+) -> Expr {
     let z = Var::new(new_variable.clone(), Type::Int);
 
     let other;
@@ -83,29 +89,26 @@ fn fusion_symmetric(
         other = targets.0.clone();
     }
 
-    Term::Op(
-        Identifier::Id(String::from(op)),
-        vec![z.into(), Var::new(other, Type::Int).into()],
-    )
+    Expr::op(op, [z.into(), Var::new(other, Type::Int).into()].as_slice())
 }
 
 /**
  * For z = x - y (x = z + y, y = x - z)
  */
-fn fusion_sub(targets: &(String, String), new_variable: &String, replacee: &String) -> Term {
+fn fusion_sub(targets: &(String, String), new_variable: &String, replacee: &String) -> Expr {
     let z = Var::new(new_variable.clone(), Type::Int);
 
     if replacee == &targets.0 {
         // x = z + y
-        Term::Op(
-            Identifier::Id(String::from("+")),
-            vec![z.into(), Var::new(targets.1.clone(), Type::Int).into()],
+        Expr::op(
+            "+",
+            &[z.into(), Var::new(targets.1.clone(), Type::Int).into()],
         )
     } else {
         // y = x - z
-        Term::Op(
-            Identifier::Id(String::from("-")),
-            vec![Var::new(targets.0.clone(), Type::Int).into(), z.into()],
+        Expr::op(
+            "+",
+            &[Var::new(targets.0.clone(), Type::Int).into(), z.into()],
         )
     }
 }
@@ -130,7 +133,7 @@ impl Fusion {
             .original
             .constraints
             .iter()
-            .map(|t| self.visit_term(t.clone()))
+            .map(|t| self.visit_expr(t.clone()))
             .collect();
 
         let target_type = Type::Int;
@@ -146,34 +149,30 @@ impl Fusion {
         ));
     }
 
-    fn visit_term(&self, term: Term) -> Term {
-        use Term::*;
-        match term {
-            SpecConstant(_) => term,
-            Identifier(ident) => self.visit_identifier(ident),
-            Op(op, terms) => Op(
-                op,
-                terms.iter().map(|t| self.visit_term(t.clone())).collect(),
-            ),
-            Let(bindings, subterm) => Let(
-                bindings
-                    .iter()
-                    .map(|(sym, term)| (sym.clone(), self.visit_term(term.clone())))
-                    .collect(),
-                Box::new(self.visit_term(*subterm)),
-            ),
-        }
-    }
-
-    fn visit_identifier(&self, ident: Identifier) -> Term {
-        use Identifier::*;
-        match ident {
-            Id(_) => ident.into(),
+    fn visit_expr(&self, expr: Expr) -> Expr {
+        use Expr::*;
+        match expr {
+            Const(_) => expr,
+            Id(_) => expr,
             Var(var) => self.visit_variable(var),
+            Op(op, exprs) => Op(
+                op,
+                exprs
+                    .into_iter()
+                    .map(|t| Rc::new(self.visit_expr(Rc::unwrap_or_clone(t))))
+                    .collect(),
+            ),
+            Let(bindings, subexpr) => Let(
+                bindings
+                    .into_iter()
+                    .map(|(sym, expr)| (sym, Rc::new(self.visit_expr(Rc::unwrap_or_clone(expr)))))
+                    .collect(),
+                Rc::new(self.visit_expr(Rc::unwrap_or_clone(subexpr))),
+            ),
         }
     }
 
-    fn visit_variable(&self, var: Var) -> Term {
+    fn visit_variable(&self, var: Var) -> Expr {
         // TODO use a single randomness generator and set seed
         let mut rng = rand::thread_rng();
         if var.global
@@ -210,7 +209,7 @@ impl VariableReplacer {
             .original
             .constraints
             .iter()
-            .map(|t| self.visit_term(t.clone()))
+            .map(|t| self.visit_expr(t.clone()))
             .collect();
 
         let mut declaration = None;
@@ -235,43 +234,39 @@ impl VariableReplacer {
 
         self.new.commands.push(declaration.unwrap());
 
-        self.new.constraints.push(Term::Op(
-            Identifier::Id("=".to_string()),
-            Vec::from([
+        self.new.constraints.push(Expr::op(
+            "=",
+            &[
                 Var::new(self.target.clone(), target_type.clone()).into(),
                 Var::new(self.replacement.clone(), target_type.clone()).into(),
-            ]),
+            ],
         ));
     }
 
-    fn visit_term(&self, term: Term) -> Term {
-        use Term::*;
-        match term {
-            SpecConstant(_) => term,
-            Identifier(ident) => self.visit_identifier(ident),
-            Op(op, terms) => Op(
-                op,
-                terms.iter().map(|t| self.visit_term(t.clone())).collect(),
-            ),
-            Let(bindings, subterm) => Let(
-                bindings
-                    .iter()
-                    .map(|(sym, term)| (sym.clone(), self.visit_term(term.clone())))
-                    .collect(),
-                Box::new(self.visit_term(*subterm)),
-            ),
-        }
-    }
-
-    fn visit_identifier(&self, ident: Identifier) -> Term {
-        use Identifier::*;
-        match ident {
-            Id(_) => ident.into(),
+    fn visit_expr(&self, expr: Expr) -> Expr {
+        use Expr::*;
+        match expr {
+            Const(_) => expr,
+            Id(_) => expr,
             Var(var) => self.visit_variable(var),
+            Op(op, exprs) => Op(
+                op,
+                exprs
+                    .into_iter()
+                    .map(|t| Rc::new(self.visit_expr(Rc::unwrap_or_clone(t))))
+                    .collect(),
+            ),
+            Let(bindings, subexpr) => Let(
+                bindings
+                    .into_iter()
+                    .map(|(sym, expr)| (sym, Rc::new(self.visit_expr(Rc::unwrap_or_clone(expr)))))
+                    .collect(),
+                Rc::new(self.visit_expr(Rc::unwrap_or_clone(subexpr))),
+            ),
         }
     }
 
-    fn visit_variable(&self, mut var: Var) -> Term {
+    fn visit_variable(&self, mut var: Var) -> Expr {
         // TODO use a single randomness generator and set seed
         let mut rng = rand::thread_rng();
         if var.global && var.name == self.target && rng.gen::<bool>() {

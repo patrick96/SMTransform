@@ -1,6 +1,6 @@
 use crate::parser::*;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Deref, rc::Rc};
 
 #[derive(Clone, Debug)]
 pub enum ResultKind {
@@ -21,6 +21,111 @@ impl std::fmt::Display for ResultKind {
     }
 }
 
+pub enum Expr {
+    Const(SpecConstant),
+    Id(String),
+    Var(Var),
+    Op(Identifier, Vec<Rc<Expr>>),
+    Let(Vec<(String, Rc<Expr>)>, Rc<Expr>),
+}
+
+impl Expr {
+    fn clone_rc(expr: &Rc<Expr>) -> Rc<Expr> {
+        Rc::new((expr.deref()).clone())
+    }
+
+    pub fn op(name: &str, exprs: &[Expr]) -> Expr {
+        Expr::Op(
+            Identifier::Id(name.to_string()),
+            exprs.iter().map(|expr| Rc::new(expr.clone())).collect(),
+        )
+    }
+}
+
+impl Clone for Expr {
+    fn clone(&self) -> Self {
+        use Expr::*;
+        match self {
+            Const(c) => Const(c.clone()),
+            Id(ident) => Id(ident.clone()),
+            Var(var) => Var(var.clone()),
+            Op(ident, terms) => Op(ident.clone(), terms.iter().map(Expr::clone_rc).collect()),
+            Let(bindings, subterm) => Let(
+                bindings
+                    .iter()
+                    .map(|(name, t)| (name.clone(), Expr::clone_rc(t)))
+                    .collect(),
+                Expr::clone_rc(subterm),
+            ),
+        }
+    }
+}
+
+impl From<Expr> for Term {
+    fn from(expr: Expr) -> Self {
+        match expr {
+            Expr::Const(c) => c.into(),
+            Expr::Id(ident) => Identifier::Id(ident).into(),
+            Expr::Var(var) => var.into(),
+            Expr::Op(op, terms) => Term::Op(
+                op,
+                terms
+                    .into_iter()
+                    .map(|t| Rc::unwrap_or_clone(t).into())
+                    .collect(),
+            ),
+            Expr::Let(bindings, subterm) => Term::Let(
+                bindings
+                    .into_iter()
+                    .map(|(name, t)| (name, Rc::unwrap_or_clone(t).into()))
+                    .collect(),
+                Box::new(Rc::unwrap_or_clone(subterm).into()),
+            ),
+        }
+    }
+}
+
+impl From<Term> for Expr {
+    fn from(term: Term) -> Self {
+        match term {
+            Term::SpecConstant(c) => c.into(),
+            Term::Identifier(ident) => ident.into(),
+            Term::Op(ident, terms) => Expr::Op(
+                ident,
+                terms.into_iter().map(|t| Rc::new(t.into())).collect(),
+            ),
+            Term::Let(bindings, subterm) => Expr::Let(
+                bindings
+                    .into_iter()
+                    .map(|(name, t)| (name, Rc::new(t.into())))
+                    .collect(),
+                Rc::new((*subterm).into()),
+            ),
+        }
+    }
+}
+
+impl From<SpecConstant> for Expr {
+    fn from(c: SpecConstant) -> Self {
+        Expr::Const(c)
+    }
+}
+
+impl From<Identifier> for Expr {
+    fn from(ident: Identifier) -> Self {
+        match ident {
+            Identifier::Id(ident) => Expr::Id(ident),
+            Identifier::Var(var) => var.into(),
+        }
+    }
+}
+
+impl From<Var> for Expr {
+    fn from(var: Var) -> Self {
+        Expr::Var(var)
+    }
+}
+
 /**
  * Simplified version of [Script] with some assumptions.
  *
@@ -30,7 +135,7 @@ impl std::fmt::Display for ResultKind {
  */
 #[derive(Clone)]
 pub struct Formula {
-    pub constraints: Vec<Term>,
+    pub constraints: Vec<Expr>,
     pub free_vars: HashMap<String, Type>,
 
     /**
@@ -59,7 +164,7 @@ impl Formula {
         let mut logic = None;
         let mut status = ResultKind::UNKNOWN;
         let mut smt_lib_version = None;
-        let mut constraints: Vec<Term> = Vec::new();
+        let mut constraints: Vec<Expr> = Vec::new();
         let mut commands: Vec<Command> = Vec::new();
 
         let mut check_sat_seen = false;
@@ -71,7 +176,7 @@ impl Formula {
                     if check_sat_seen {
                         return Err("Assertion after check-sat command".to_string());
                     }
-                    constraints.push(term.clone())
+                    constraints.push(term.clone().into())
                 }
                 DeclareFun(_, _, _) | DefineFun(_, _, _, _) => commands.push(command.clone()),
                 CheckSat => {
@@ -149,7 +254,7 @@ impl Formula {
         cmds.extend(self.commands.clone());
 
         for assertion in &self.constraints {
-            cmds.push(Command::Assert(assertion.clone()));
+            cmds.push(Command::Assert(assertion.clone().into()));
         }
 
         cmds.push(Command::CheckSat);

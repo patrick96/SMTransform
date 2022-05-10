@@ -430,8 +430,9 @@ impl Listener {
                 .collect::<VisitorResult<Vec<(Symbol, Sort)>>>()?;
 
             let local_vars = HashMap::from_iter(
-                args.iter()
-                    .map(|(sym, sort)| (sym.clone(), Type::from(&[], sort))),
+                args.clone()
+                    .into_iter()
+                    .map(|(sym, sort)| (sym, Type::from(&[], &sort))),
             );
 
             let return_sort = self.sort(&*def_ctx.sort().unwrap())?;
