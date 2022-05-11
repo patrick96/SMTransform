@@ -28,7 +28,7 @@ pub enum Expr {
     Id(String),
     Var(Var),
     Op(Identifier, Vec<BoxedExpr>),
-    Let(Vec<(String, BoxedExpr)>, BoxedExpr),
+    Let(Vec<(Symbol, BoxedExpr)>, BoxedExpr),
 }
 
 impl Expr {
@@ -160,7 +160,7 @@ trait Visitor {
     fn visit_let(
         &mut self,
         _e: &BoxedExpr,
-        bindings: &Vec<(String, BoxedExpr)>,
+        bindings: &Vec<(Symbol, BoxedExpr)>,
         subexpr: &BoxedExpr,
     ) {
         for (_, expr) in bindings {
@@ -229,7 +229,7 @@ pub struct Formula {
     /**
      * Set from (set-logic ...)
      */
-    logic: Option<String>,
+    logic: Option<Symbol>,
 
     /**
      * Set from (set-info :status ...)
@@ -287,9 +287,9 @@ impl Formula {
                         if let Some(attr_value) = &attr.value {
                             let status_str = attr_value.to_string();
                             status = match status_str.as_str() {
-                                "sat" => ResultKind::SAT,
-                                "unsat" => ResultKind::UNSAT,
-                                "unknown" => ResultKind::UNKNOWN,
+                                "sat" | "|sat|" => ResultKind::SAT,
+                                "unsat" | "|unsat|" => ResultKind::UNSAT,
+                                "unknown" | "|unknown|" => ResultKind::UNKNOWN,
                                 s => return Err(format!("Unsupported status: '{}'", s)),
                             }
                         } else {
@@ -334,7 +334,7 @@ impl Formula {
         }
 
         if let Some(logic) = &self.logic {
-            cmds.push(Command::SetLogic(logic.to_string()));
+            cmds.push(Command::SetLogic(logic.clone()));
         }
 
         cmds.push(Command::SetInfo(Attribute {

@@ -22,7 +22,7 @@ struct Args {
     #[clap(long, default_value_t = 0)]
     seed: u64,
 
-    file: String
+    file: String,
 }
 
 fn main() -> Result<(), String> {

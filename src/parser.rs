@@ -4,6 +4,7 @@ pub mod smtlibv2parser;
 pub mod smtlibv2visitor;
 
 use std::collections::HashMap;
+use std::fmt::Display;
 
 use antlr_rust::common_token_stream::CommonTokenStream;
 use antlr_rust::error_listener::ErrorListener;
@@ -21,12 +22,35 @@ use smtlibv2lexer::SMTLIBv2Lexer;
 use smtlibv2listener::SMTLIBv2Listener;
 use smtlibv2parser::*;
 
-pub type Symbol = String;
 pub type Numeral = String;
 pub type Decimal = String;
 pub type HexDecimal = String;
 pub type Binary = String;
 pub type Keyword = String;
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct Symbol {
+    pub s: String,
+}
+
+impl From<String> for Symbol {
+    fn from(s: String) -> Self {
+        Self { s }
+    }
+}
+
+impl From<Symbol> for String {
+    fn from(s: Symbol) -> Self {
+        s.s
+    }
+}
+
+impl Display for Symbol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // TODO only use |..| if necessary
+        write!(f, "|{}|", self.s)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
@@ -45,6 +69,7 @@ pub enum Type {
 impl Type {
     fn from(args: &[Sort], result: &Sort) -> Type {
         if args.is_empty() {
+            // TODO handle |Int| ...
             match result.to_string().as_str() {
                 "Int" => Type::Int,
                 "Bool" => Type::Bool,
@@ -88,9 +113,9 @@ impl Var {
     }
 }
 
-impl std::fmt::Display for Var {
+impl Display for Var {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.name)
+        write!(f, "|{}|", self.name)
     }
 }
 
@@ -100,7 +125,7 @@ pub enum Identifier {
     Var(Var),
 }
 
-impl std::fmt::Display for Identifier {
+impl Display for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Identifier::*;
 
@@ -114,6 +139,12 @@ impl std::fmt::Display for Identifier {
 impl From<Var> for Identifier {
     fn from(var: Var) -> Self {
         Identifier::Var(var)
+    }
+}
+
+impl From<Symbol> for Identifier {
+    fn from(s: Symbol) -> Self {
+        Identifier::Id(s.to_string())
     }
 }
 
@@ -132,7 +163,7 @@ impl Sort {
     }
 }
 
-impl std::fmt::Display for Sort {
+impl Display for Sort {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if !self.sorts.is_empty() {
             write!(f, "(")?;
@@ -161,7 +192,7 @@ pub enum SpecConstant {
     String(String),
 }
 
-impl std::fmt::Display for SpecConstant {
+impl Display for SpecConstant {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use SpecConstant::*;
 
@@ -183,7 +214,7 @@ pub enum Term {
     Let(Vec<(Symbol, Term)>, Box<Term>),
 }
 
-impl std::fmt::Display for Term {
+impl Display for Term {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Term::*;
 
@@ -236,7 +267,7 @@ pub enum AttributeValue {
     Symbol(Symbol),
 }
 
-impl std::fmt::Display for AttributeValue {
+impl Display for AttributeValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use AttributeValue::*;
 
@@ -253,7 +284,7 @@ pub struct Attribute {
     pub value: Option<AttributeValue>,
 }
 
-impl std::fmt::Display for Attribute {
+impl Display for Attribute {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.keyword)?;
 
@@ -279,7 +310,7 @@ pub enum Command {
     Generic(String),
 }
 
-impl std::fmt::Display for Command {
+impl Display for Command {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Command::*;
 
@@ -333,7 +364,7 @@ impl Script {
     }
 }
 
-impl std::fmt::Display for Script {
+impl Display for Script {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for command in &self.commands {
             command.fmt(f)?;
@@ -363,12 +394,12 @@ impl Listener {
         }
     }
 
-    fn add_global(&mut self, name: &str, t: &Type) -> Result<(), String> {
-        if self.global_vars.contains_key(name) {
+    fn add_global(&mut self, name: &Symbol, t: &Type) -> Result<(), String> {
+        if self.global_vars.contains_key(&name.s) {
             return Err(format!("Global variable '{}' already exists", name));
         }
 
-        self.global_vars.insert(name.to_string(), t.clone());
+        self.global_vars.insert(name.clone().into(), t.clone());
 
         Ok(())
     }
@@ -381,7 +412,7 @@ impl Listener {
             .collect::<VisitorResult<Vec<Command>>>()?;
 
         Ok(Script {
-            commands: commands,
+            commands,
             global_vars: self.global_vars.clone(),
         })
     }
@@ -396,7 +427,7 @@ impl Listener {
             let return_sort = self.sort(&*ctx.sort(0).unwrap())?;
             let fun_type = Type::from(&[], &return_sort);
 
-            if let Err(msg) = self.add_global(name.as_str(), &fun_type) {
+            if let Err(msg) = self.add_global(&name, &fun_type) {
                 return visitor_error!(msg.as_str(), ctx);
             }
 
@@ -413,7 +444,7 @@ impl Listener {
             let return_sort = self.sort(&*sorts.last().unwrap())?;
             let fun_type = Type::from(arg_sorts.as_slice(), &return_sort);
 
-            if let Err(msg) = self.add_global(name.as_str(), &fun_type) {
+            if let Err(msg) = self.add_global(&name, &fun_type) {
                 return visitor_error!(msg.as_str(), ctx);
             }
 
@@ -468,7 +499,7 @@ impl Listener {
     fn term(
         &self,
         ctx: &TermContextAll,
-        mut local_vars: HashMap<String, Type>,
+        mut local_vars: HashMap<Symbol, Type>,
     ) -> VisitorResult<Term> {
         /*
          * term
@@ -526,7 +557,7 @@ impl Listener {
     fn var_binding(
         &self,
         ctx: &Var_bindingContextAll,
-        local_vars: HashMap<String, Type>,
+        local_vars: HashMap<Symbol, Type>,
     ) -> VisitorResult<(Symbol, Term)> {
         Ok((
             self.symbol(&*ctx.symbol().unwrap())?,
@@ -571,7 +602,7 @@ impl Listener {
     fn qual_identifier(
         &self,
         ctx: &Qual_identifierContextAll,
-        local_vars: &HashMap<String, Type>,
+        local_vars: &HashMap<Symbol, Type>,
     ) -> VisitorResult<Identifier> {
         if ctx.GRW_As().is_some() {
             visitor_error!("'as' identifiers no supported", ctx)
@@ -585,7 +616,7 @@ impl Listener {
     fn identifier(
         &self,
         ctx: &IdentifierContextAll,
-        local_vars: &HashMap<String, Type>,
+        local_vars: &HashMap<Symbol, Type>,
     ) -> VisitorResult<Identifier> {
         if ctx.GRW_Underscore().is_some() {
             let symbol = self.symbol(&*ctx.symbol().unwrap())?;
@@ -604,11 +635,11 @@ impl Listener {
             let sym = self.symbol(&*symbol)?;
 
             if let Some(t) = local_vars.get(&sym) {
-                Ok(Var::new_local(sym, t.clone()).into())
-            } else if let Some(t) = self.global_vars.get(&sym) {
-                Ok(Var::new(sym, t.clone()).into())
+                Ok(Var::new_local(sym.into(), t.clone()).into())
+            } else if let Some(t) = self.global_vars.get(&sym.s) {
+                Ok(Var::new(sym.into(), t.clone()).into())
             } else {
-                Ok(Identifier::Id(sym))
+                Ok(Identifier::Id(sym.to_string()))
             }
         } else {
             visitor_error!("Unsupported identifier", ctx)
@@ -616,7 +647,14 @@ impl Listener {
     }
 
     fn symbol(&self, ctx: &SymbolContextAll) -> VisitorResult<Symbol> {
-        Ok(ctx.get_text())
+        if let Some(quoted) = ctx.quotedSymbol() {
+            let text = quoted.get_text();
+            Ok(text[1..(text.len() - 1)].to_string().into())
+        } else if let Some(simple) = ctx.simpleSymbol() {
+            Ok(simple.get_text().into())
+        } else {
+            visitor_error!("Unsupported symbol", ctx)
+        }
     }
 
     fn sort(&self, ctx: &SortContextAll) -> VisitorResult<Sort> {
@@ -634,12 +672,12 @@ impl Listener {
         let keyword = self.keyword(&*ctx.keyword().unwrap())?;
         if let Some(attribute_value) = ctx.attribute_value() {
             Ok(Attribute {
-                keyword: keyword,
+                keyword,
                 value: Some(self.attribute_value(&*attribute_value)?),
             })
         } else {
             Ok(Attribute {
-                keyword: keyword,
+                keyword,
                 value: None,
             })
         }
