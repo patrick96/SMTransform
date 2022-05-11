@@ -1,53 +1,12 @@
 use std::ops::DerefMut;
-use std::rc::Rc;
 
 use crate::formula::*;
 use crate::parser::*;
 use crate::var_generator::VariableGenerator;
+use itertools::Itertools;
+use rand::prelude::IteratorRandom;
 use rand::Rng;
-
-trait Visitor {
-    fn visit_expr(&self, expr: &mut Expr) {
-        use Expr::*;
-        match expr {
-            Const(c) => self.visit_const(c),
-            Id(ident) => self.visit_id(ident),
-            Var(var) => self.visit_variable(var),
-            Op(op, exprs) => self.visit_op(op, exprs),
-            Let(bindings, subexpr) => {
-                for (_, expr) in bindings {
-                    self.visit_expr(expr.deref_mut())
-                }
-
-                self.visit_expr(subexpr.deref_mut())
-            }
-        }
-    }
-
-    fn visit_const(&self, _c: &mut SpecConstant) {}
-
-    fn visit_op(&self, op: &mut Identifier, exprs: &mut Vec<Rc<Expr>>) {
-        self.visit_op_identifier(op);
-
-        for mut expr in exprs {
-            self.visit_expr(expr.deref_mut());
-        }
-    }
-
-    fn visit_op_identifier(&self, _ident: &mut Identifier) {}
-
-    fn visit_id(&self, _ident: &mut String) {}
-
-    fn visit_identifier(&self, ident: &mut Identifier) {
-        use Identifier::*;
-        match ident {
-            Id(_) => (),
-            Var(var) => self.visit_variable(var),
-        }
-    }
-
-    fn visit_variable(&self, _var: &mut Var) {}
-}
+use rand::RngCore;
 
 /**
  * Given targets (x, y) and new variable z applies one of the following fusions:
@@ -56,12 +15,12 @@ trait Visitor {
  * z = x * y (x = z div y, y = z div x)
  * z = x - y (x = z + y, y = x - z)
  */
-struct Fusion {
-    original: Formula,
-    new: Formula,
+struct Fusion<'a> {
+    formula: Formula,
     targets: (String, String),
     new_variable: String,
     selected_fusion: usize,
+    rng: &'a mut dyn RngCore,
 }
 
 static FUSIONS: [fn(&(String, String), &String, &String) -> Expr; 3] = [
@@ -89,7 +48,7 @@ fn fusion_symmetric(
         other = targets.0.clone();
     }
 
-    Expr::op(op, [z.into(), Var::new(other, Type::Int).into()].as_slice())
+    Expr::op(op, vec![z.into(), Var::new(other, Type::Int).into()])
 }
 
 /**
@@ -102,119 +61,114 @@ fn fusion_sub(targets: &(String, String), new_variable: &String, replacee: &Stri
         // x = z + y
         Expr::op(
             "+",
-            &[z.into(), Var::new(targets.1.clone(), Type::Int).into()],
+            vec![z.into(), Var::new(targets.1.clone(), Type::Int).into()],
         )
     } else {
         // y = x - z
         Expr::op(
             "+",
-            &[Var::new(targets.0.clone(), Type::Int).into(), z.into()],
+            vec![Var::new(targets.0.clone(), Type::Int).into(), z.into()],
         )
     }
 }
 
-impl Fusion {
-    fn new(formula: Formula, targets: (String, String), new_variable: String) -> Self {
+impl<'a> Fusion<'a> {
+    fn new(
+        formula: Formula,
+        targets: (String, String),
+        new_variable: String,
+        rng: &'a mut dyn RngCore,
+    ) -> Self {
         Self {
-            original: formula.clone(),
-            new: formula,
+            formula,
             targets,
             new_variable,
             selected_fusion: 0,
+            rng,
         }
     }
 
     fn run(&mut self) {
-        // TODO use a single randomness generator and set seed
-        let mut rng = rand::thread_rng();
-        self.selected_fusion = rng.gen_range(0..FUSIONS.len());
+        self.selected_fusion = self.rng.gen_range(0..FUSIONS.len());
 
-        self.new.constraints = self
-            .original
-            .constraints
-            .iter()
-            .map(|t| self.visit_expr(t.clone()))
-            .collect();
+        let all_x = self.formula.collect_occurences(self.targets.0.as_str());
+        let all_y = self.formula.collect_occurences(self.targets.1.as_str());
+
+        let num_x = self.rng.gen_range(1..=all_x.len());
+        let occ_x = all_x.into_iter().choose_multiple(&mut self.rng, num_x);
+
+        let num_y = self.rng.gen_range(1..=all_y.len());
+        let occ_y = all_y.into_iter().choose_multiple(&mut self.rng, num_y);
+
+        for occ in occ_x {
+            occ.replace(FUSIONS[self.selected_fusion](
+                &self.targets,
+                &self.new_variable,
+                &self.targets.0,
+            ));
+        }
+
+        for occ in occ_y {
+            occ.replace(FUSIONS[self.selected_fusion](
+                &self.targets,
+                &self.new_variable,
+                &self.targets.1,
+            ));
+        }
 
         let target_type = Type::Int;
 
-        self.new
-            .free_vars
+        self.formula
+            .global_vars
             .insert(self.new_variable.clone(), target_type.clone());
 
-        self.new.commands.push(Command::DeclareFun(
+        self.formula.commands.push(Command::DeclareFun(
             self.new_variable.clone(),
             Vec::new(),
             Sort::new(Identifier::Id("Int".into()), &[]),
         ));
     }
-
-    fn visit_expr(&self, expr: Expr) -> Expr {
-        use Expr::*;
-        match expr {
-            Const(_) => expr,
-            Id(_) => expr,
-            Var(var) => self.visit_variable(var),
-            Op(op, exprs) => Op(
-                op,
-                exprs
-                    .into_iter()
-                    .map(|t| Rc::new(self.visit_expr(Rc::unwrap_or_clone(t))))
-                    .collect(),
-            ),
-            Let(bindings, subexpr) => Let(
-                bindings
-                    .into_iter()
-                    .map(|(sym, expr)| (sym, Rc::new(self.visit_expr(Rc::unwrap_or_clone(expr)))))
-                    .collect(),
-                Rc::new(self.visit_expr(Rc::unwrap_or_clone(subexpr))),
-            ),
-        }
-    }
-
-    fn visit_variable(&self, var: Var) -> Expr {
-        // TODO use a single randomness generator and set seed
-        let mut rng = rand::thread_rng();
-        if var.global
-            && (var.name == self.targets.0 || var.name == self.targets.1)
-            && rng.gen::<bool>()
-        {
-            FUSIONS[self.selected_fusion](&self.targets, &self.new_variable, &var.name)
-        } else {
-            var.into()
-        }
-    }
 }
 
-struct VariableReplacer {
-    original: Formula,
-    new: Formula,
+struct VariableReplacer<'a> {
+    formula: Formula,
     target: String,
     replacement: String,
+    rng: &'a mut dyn RngCore,
 }
 
-impl VariableReplacer {
-    fn new(formula: Formula, target: String, replacement: String) -> Self {
-        let new_formula = formula.clone();
+impl<'a> VariableReplacer<'a> {
+    fn new(
+        formula: Formula,
+        target: String,
+        replacement: String,
+        rng: &'a mut dyn RngCore,
+    ) -> Self {
         Self {
-            original: formula,
-            new: new_formula,
-            target: target,
-            replacement: replacement,
+            formula,
+            target,
+            replacement,
+            rng,
         }
     }
 
     fn run(&mut self) {
-        self.new.constraints = self
-            .original
-            .constraints
-            .iter()
-            .map(|t| self.visit_expr(t.clone()))
-            .collect();
+        let all = self.formula.collect_occurences(self.target.as_str());
+
+        let num = self.rng.gen_range(1..=all.len());
+        let occs = all.into_iter().choose_multiple(&mut self.rng, num);
+
+        for occ in occs {
+            if let Expr::Var(var) = occ.borrow_mut().deref_mut() {
+                var.name = self.replacement.to_string();
+            } else {
+                unreachable!();
+            }
+        }
 
         let mut declaration = None;
 
-        for cmd in &self.new.commands {
+        for cmd in &self.formula.commands {
             if let Command::DeclareFun(name, args, return_sort) = cmd {
                 if name == &self.target {
                     declaration = Some(Command::DeclareFun(
@@ -226,109 +180,81 @@ impl VariableReplacer {
             }
         }
 
-        let target_type = &self.original.free_vars[&self.target];
+        let target_type = self.formula.global_vars[&self.target].clone();
 
-        self.new
-            .free_vars
+        self.formula
+            .global_vars
             .insert(self.replacement.clone(), target_type.clone());
 
-        self.new.commands.push(declaration.unwrap());
+        self.formula.commands.push(declaration.unwrap());
 
-        self.new.constraints.push(Expr::op(
-            "=",
-            &[
-                Var::new(self.target.clone(), target_type.clone()).into(),
-                Var::new(self.replacement.clone(), target_type.clone()).into(),
-            ],
-        ));
-    }
-
-    fn visit_expr(&self, expr: Expr) -> Expr {
-        use Expr::*;
-        match expr {
-            Const(_) => expr,
-            Id(_) => expr,
-            Var(var) => self.visit_variable(var),
-            Op(op, exprs) => Op(
-                op,
-                exprs
-                    .into_iter()
-                    .map(|t| Rc::new(self.visit_expr(Rc::unwrap_or_clone(t))))
-                    .collect(),
-            ),
-            Let(bindings, subexpr) => Let(
-                bindings
-                    .into_iter()
-                    .map(|(sym, expr)| (sym, Rc::new(self.visit_expr(Rc::unwrap_or_clone(expr)))))
-                    .collect(),
-                Rc::new(self.visit_expr(Rc::unwrap_or_clone(subexpr))),
-            ),
-        }
-    }
-
-    fn visit_variable(&self, mut var: Var) -> Expr {
-        // TODO use a single randomness generator and set seed
-        let mut rng = rand::thread_rng();
-        if var.global && var.name == self.target && rng.gen::<bool>() {
-            var.name = self.replacement.clone();
-        }
-        var.into()
+        self.formula.constraints.push(
+            Expr::op(
+                "=",
+                vec![
+                    Var::new(self.target.clone(), target_type.clone()).into(),
+                    Var::new(self.replacement.clone(), target_type.clone()).into(),
+                ],
+            )
+            .to_boxed(),
+        );
     }
 }
 
-pub fn replace_variable(formula: &Formula) -> Result<Formula, String> {
+pub fn replace_variable(rng: &mut dyn RngCore, formula: Formula) -> Result<Formula, String> {
     let mut gen = VariableGenerator::new();
-    gen.reserve(formula.free_vars.keys());
+    gen.reserve(formula.global_vars.keys());
     let new_variable = gen.generate();
 
-    let mut target = None;
-
-    for (variable, _) in &formula.free_vars {
-        target = Some(variable.to_string());
-        break;
-    }
+    let target = formula
+        .global_vars
+        .iter()
+        .map(|(name, _)| name)
+        .sorted()
+        .choose(rng)
+        .map(String::clone);
 
     let mut replacer = VariableReplacer::new(
-        formula.clone(),
+        formula,
         target.ok_or("No target variable found".to_string())?,
         new_variable,
+        rng,
     );
     replacer.run();
 
-    Ok(replacer.new)
+    Ok(replacer.formula)
 }
 
-pub fn do_fusion(f: &Formula) -> Result<Formula, String> {
+pub fn do_fusion(rng: &mut dyn RngCore, f: Formula) -> Result<Formula, String> {
     let mut gen = VariableGenerator::new();
 
-    gen.reserve(f.free_vars.keys());
+    gen.reserve(f.global_vars.keys());
     let new_variable = gen.generate();
 
-    let mut target1 = None;
-    let mut target2 = None;
+    let mut targets: Vec<String> = f
+        .global_vars
+        .iter()
+        .filter_map(|(name, t)| if *t == Type::Int { Some(name) } else { None })
+        .sorted()
+        .choose_multiple(rng, 2)
+        .into_iter()
+        .map(String::clone)
+        .collect();
 
-    for (variable, t) in &f.free_vars {
-        if *t != Type::Int {
-            continue;
-        }
-
-        if target1.is_none() {
-            target1 = Some(variable.clone());
-        } else if target2.is_none() {
-            target2 = Some(variable.clone());
-            break;
-        }
+    if targets.len() < 2 {
+        return Err(format!(
+            "Not enough variables available, required 2, found {}",
+            targets.len()
+        ));
     }
 
     let mut fusion = Fusion::new(
-        f.clone(),
-        (
-            target1.ok_or("No target1 variable found".to_string())?,
-            target2.ok_or("No target2 variable found".to_string())?,
-        ),
+        f,
+        (targets.pop().unwrap(), targets.pop().unwrap()),
         new_variable,
+        rng,
     );
     fusion.run();
 
-    Ok(fusion.new)
+    Ok(fusion.formula)
 }

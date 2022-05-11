@@ -1,6 +1,6 @@
 use crate::parser::*;
 
-use std::{collections::HashMap, ops::Deref, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, ops::Deref, rc::Rc};
 
 #[derive(Clone, Debug)]
 pub enum ResultKind {
@@ -21,24 +21,44 @@ impl std::fmt::Display for ResultKind {
     }
 }
 
+pub type BoxedExpr = Rc<RefCell<Expr>>;
+
 pub enum Expr {
     Const(SpecConstant),
     Id(String),
     Var(Var),
-    Op(Identifier, Vec<Rc<Expr>>),
-    Let(Vec<(String, Rc<Expr>)>, Rc<Expr>),
+    Op(Identifier, Vec<BoxedExpr>),
+    Let(Vec<(String, BoxedExpr)>, BoxedExpr),
 }
 
 impl Expr {
-    fn clone_rc(expr: &Rc<Expr>) -> Rc<Expr> {
-        Rc::new((expr.deref()).clone())
+    pub fn clone_rc(expr: &BoxedExpr) -> BoxedExpr {
+        Rc::new((**expr).clone())
     }
 
-    pub fn op(name: &str, exprs: &[Expr]) -> Expr {
+    pub fn to_boxed(self) -> BoxedExpr {
+        Rc::new(RefCell::new(self))
+    }
+
+    pub fn into_inner(expr: BoxedExpr) -> Self {
+        Rc::unwrap_or_clone(expr).into_inner()
+    }
+
+    pub fn to_owned(expr: &BoxedExpr) -> Self {
+        (**expr).clone().into_inner()
+    }
+
+    pub fn op(name: &str, exprs: Vec<Self>) -> Self {
         Expr::Op(
             Identifier::Id(name.to_string()),
-            exprs.iter().map(|expr| Rc::new(expr.clone())).collect(),
+            exprs.into_iter().map(Expr::to_boxed).collect(),
         )
+    }
+}
+
+impl Term {
+    fn to_boxed(self) -> BoxedExpr {
+        Expr::to_boxed(self.into())
     }
 }
 
@@ -71,15 +91,15 @@ impl From<Expr> for Term {
                 op,
                 terms
                     .into_iter()
-                    .map(|t| Rc::unwrap_or_clone(t).into())
+                    .map(|t| Expr::into_inner(t).into())
                     .collect(),
             ),
             Expr::Let(bindings, subterm) => Term::Let(
                 bindings
                     .into_iter()
-                    .map(|(name, t)| (name, Rc::unwrap_or_clone(t).into()))
+                    .map(|(name, t)| (name, Expr::into_inner(t).into()))
                     .collect(),
-                Box::new(Rc::unwrap_or_clone(subterm).into()),
+                Box::new(Expr::into_inner(subterm).into()),
             ),
         }
     }
@@ -90,16 +110,15 @@ impl From<Term> for Expr {
         match term {
             Term::SpecConstant(c) => c.into(),
             Term::Identifier(ident) => ident.into(),
-            Term::Op(ident, terms) => Expr::Op(
-                ident,
-                terms.into_iter().map(|t| Rc::new(t.into())).collect(),
-            ),
+            Term::Op(ident, terms) => {
+                Expr::Op(ident, terms.into_iter().map(Term::to_boxed).collect())
+            }
             Term::Let(bindings, subterm) => Expr::Let(
                 bindings
                     .into_iter()
-                    .map(|(name, t)| (name, Rc::new(t.into())))
+                    .map(|(name, t)| (name, t.to_boxed()))
                     .collect(),
-                Rc::new((*subterm).into()),
+                (*subterm).to_boxed(),
             ),
         }
     }
@@ -126,6 +145,70 @@ impl From<Var> for Expr {
     }
 }
 
+trait Visitor {
+    fn visit_expr(&mut self, expr: &BoxedExpr) {
+        use Expr::*;
+        match (*expr).borrow().deref() {
+            Const(c) => self.visit_const(expr, c),
+            Id(ident) => self.visit_id(expr, ident),
+            Var(var) => self.visit_variable(expr, var),
+            Op(op, exprs) => self.visit_op(expr, op, exprs),
+            Let(bindings, subexpr) => self.visit_let(expr, bindings, subexpr),
+        }
+    }
+
+    fn visit_let(
+        &mut self,
+        _e: &BoxedExpr,
+        bindings: &Vec<(String, BoxedExpr)>,
+        subexpr: &BoxedExpr,
+    ) {
+        for (_, expr) in bindings {
+            self.visit_expr(expr)
+        }
+
+        self.visit_expr(subexpr)
+    }
+
+    fn visit_const(&mut self, _e: &BoxedExpr, _c: &SpecConstant) {}
+
+    fn visit_op(&mut self, e: &BoxedExpr, op: &Identifier, exprs: &Vec<BoxedExpr>) {
+        self.visit_op_identifier(e, op);
+
+        for expr in exprs {
+            self.visit_expr(expr);
+        }
+    }
+
+    fn visit_op_identifier(&mut self, _e: &BoxedExpr, _ident: &Identifier) {}
+
+    fn visit_id(&mut self, _e: &BoxedExpr, _ident: &String) {}
+
+    fn visit_variable(&mut self, _e: &BoxedExpr, _var: &Var) {}
+}
+
+pub struct VariableCollector {
+    target: String,
+    pub vars: Vec<BoxedExpr>,
+}
+
+impl VariableCollector {
+    fn new(target: String) -> Self {
+        Self {
+            target,
+            vars: Vec::new(),
+        }
+    }
+}
+
+impl Visitor for VariableCollector {
+    fn visit_variable(&mut self, e: &BoxedExpr, var: &Var) {
+        if var.global && var.name == self.target {
+            self.vars.push(e.clone());
+        }
+    }
+}
+
 /**
  * Simplified version of [Script] with some assumptions.
  *
@@ -135,8 +218,8 @@ impl From<Var> for Expr {
  */
 #[derive(Clone)]
 pub struct Formula {
-    pub constraints: Vec<Expr>,
-    pub free_vars: HashMap<String, Type>,
+    pub constraints: Vec<BoxedExpr>,
+    pub global_vars: HashMap<String, Type>,
 
     /**
      * Commands from the original [Script] that have to be emitted as-is
@@ -160,11 +243,21 @@ pub struct Formula {
 }
 
 impl Formula {
+    pub fn collect_occurences(&self, name: &str) -> Vec<BoxedExpr> {
+        let mut collector = VariableCollector::new(name.to_string());
+
+        for expr in &self.constraints {
+            collector.visit_expr(expr);
+        }
+
+        collector.vars
+    }
+
     pub fn from(script: &Script) -> Result<Formula, String> {
         let mut logic = None;
         let mut status = ResultKind::UNKNOWN;
         let mut smt_lib_version = None;
-        let mut constraints: Vec<Expr> = Vec::new();
+        let mut constraints: Vec<BoxedExpr> = Vec::new();
         let mut commands: Vec<Command> = Vec::new();
 
         let mut check_sat_seen = false;
@@ -176,7 +269,7 @@ impl Formula {
                     if check_sat_seen {
                         return Err("Assertion after check-sat command".to_string());
                     }
-                    constraints.push(term.clone().into())
+                    constraints.push(term.clone().to_boxed())
                 }
                 DeclareFun(_, _, _) | DefineFun(_, _, _, _) => commands.push(command.clone()),
                 CheckSat => {
@@ -218,12 +311,12 @@ impl Formula {
         }
 
         Ok(Formula {
-            constraints: constraints,
-            commands: commands,
-            logic: logic,
-            free_vars: script.global_vars.clone(),
-            status: status,
-            smt_lib_version: smt_lib_version,
+            constraints,
+            commands,
+            logic,
+            global_vars: script.global_vars.clone(),
+            status,
+            smt_lib_version,
         })
     }
 
@@ -254,7 +347,7 @@ impl Formula {
         cmds.extend(self.commands.clone());
 
         for assertion in &self.constraints {
-            cmds.push(Command::Assert(assertion.clone().into()));
+            cmds.push(Command::Assert(Expr::to_owned(assertion).into()));
         }
 
         cmds.push(Command::CheckSat);

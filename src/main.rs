@@ -1,6 +1,9 @@
 #![feature(try_blocks)]
 #![feature(arc_unwrap_or_clone)]
 
+use rand::SeedableRng;
+use rand_pcg::Pcg32;
+
 use std::env;
 use std::fs;
 
@@ -22,9 +25,11 @@ fn main() -> Result<(), String> {
 
     let mut current = formula;
 
+    let mut prng = Pcg32::seed_from_u64(0);
+
     for _ in 1..10 {
-        current = transformations::replace_variable(&current)?;
-        current = transformations::do_fusion(&current)?;
+        current = transformations::replace_variable(&mut prng, current)?;
+        current = transformations::do_fusion(&mut prng, current)?;
 
         let j = json!({
             "smtlib": current.to_script().to_string(),
