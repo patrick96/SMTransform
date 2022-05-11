@@ -23,10 +23,11 @@ struct Fusion<'a> {
     rng: &'a mut dyn RngCore,
 }
 
-static FUSIONS: [fn(&(String, String), &String, &String) -> Expr; 3] = [
+static FUSIONS: [fn(&(String, String), &String, &String) -> Expr; 4] = [
     |targets, new_variable, replacee| fusion_symmetric(targets, new_variable, replacee, "-"),
     |targets, new_variable, replacee| fusion_symmetric(targets, new_variable, replacee, "div"),
     fusion_sub,
+    fusion_mul,
 ];
 
 /**
@@ -68,6 +69,49 @@ fn fusion_sub(targets: &(String, String), new_variable: &String, replacee: &Stri
         Expr::op(
             "+",
             vec![Var::new(targets.0.clone(), Type::Int).into(), z.into()],
+        )
+    }
+}
+
+/**
+ * For z = x / y
+ *
+ * x = if (mod x y) == 0 then  z * y else x
+ * y = if (mod x y) == 0 then  x / z else y
+ */
+fn fusion_mul(targets: &(String, String), new_variable: &String, replacee: &String) -> Expr {
+    let x = Var::new(targets.0.clone(), Type::Int);
+    let y = Var::new(targets.1.clone(), Type::Int);
+    let z = Var::new(new_variable.clone(), Type::Int);
+
+    let template = |target: Expr, op: Expr| {
+        Expr::op(
+            "ite",
+            vec![
+                Expr::op(
+                    "=",
+                    vec![
+                        Expr::op("mod", vec![x.clone().into(), y.clone().into()]),
+                        SpecConstant::Numeral("0".to_string()).into(),
+                    ],
+                ),
+                op,     // then
+                target, // else
+            ],
+        )
+    };
+
+    if replacee == &x.name {
+        // x = if (mod x y) == 0 then  z * y else x
+        template(
+            x.clone().into(),
+            Expr::op("*", vec![z.into(), y.clone().into()]),
+        )
+    } else {
+        // y = if (mod x y) == 0 then x / z else y
+        template(
+            y.clone().into(),
+            Expr::op("/", vec![x.clone().into(), z.into()]),
         )
     }
 }
