@@ -6,6 +6,9 @@ pub mod smtlibv2visitor;
 use std::collections::HashMap;
 use std::fmt::Display;
 
+use lazy_static::lazy_static;
+use regex::Regex;
+
 use antlr_rust::common_token_stream::CommonTokenStream;
 use antlr_rust::error_listener::ErrorListener;
 use antlr_rust::errors::ANTLRError;
@@ -31,11 +34,48 @@ pub type Keyword = String;
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Symbol {
     pub s: String,
+    quoted: bool,
 }
 
-impl From<String> for Symbol {
-    fn from(s: String) -> Self {
-        Self { s }
+impl Symbol {
+    pub fn new_simple(s: String) -> Self {
+        Self { s, quoted: false }
+    }
+    pub fn new_quoted(s: String) -> Self {
+        Self { s, quoted: true }
+    }
+
+    pub fn new(s: String) -> Self {
+        lazy_static! {
+            static ref RE: Regex =
+                Regex::new(r"^[a-zA-Z+=/*%?!$-_~&^<>@.](\d|[a-zA-Z+=/*%?!$-_~&^<>@.])*$").unwrap();
+        }
+
+        if RE.is_match(s.as_str()) {
+            Self::new_simple(s)
+        } else {
+            Self::new_quoted(s)
+        }
+    }
+
+    pub fn is_simple(&self) -> bool {
+        !self.quoted
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_simple_symbol() {
+        assert!(Symbol::new("Int".to_string()).is_simple());
+        assert!(Symbol::new("sat".to_string()).is_simple());
+        assert!(Symbol::new("v0".to_string()).is_simple());
+    }
+
+    #[test]
+    fn test_quoted_symbol() {
+        assert!(!Symbol::new("foo bar".to_string()).is_simple());
     }
 }
 
@@ -47,8 +87,11 @@ impl From<Symbol> for String {
 
 impl Display for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // TODO only use |..| if necessary
-        write!(f, "|{}|", self.s)
+        if self.quoted {
+            write!(f, "|{}|", self.s)
+        } else {
+            write!(f, "{}", self.s)
+        }
     }
 }
 
@@ -115,7 +158,7 @@ impl Var {
 
 impl Display for Var {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "|{}|", self.name)
+        Symbol::new(self.name.clone()).fmt(f)
     }
 }
 
@@ -350,6 +393,7 @@ impl Display for Command {
     }
 }
 
+#[derive(Debug)]
 pub struct Script {
     pub commands: Vec<Command>,
     pub global_vars: HashMap<String, Type>,
@@ -649,9 +693,9 @@ impl Listener {
     fn symbol(&self, ctx: &SymbolContextAll) -> VisitorResult<Symbol> {
         if let Some(quoted) = ctx.quotedSymbol() {
             let text = quoted.get_text();
-            Ok(text[1..(text.len() - 1)].to_string().into())
+            Ok(Symbol::new_quoted(text[1..(text.len() - 1)].to_string()))
         } else if let Some(simple) = ctx.simpleSymbol() {
-            Ok(simple.get_text().into())
+            Ok(Symbol::new_simple(simple.get_text()))
         } else {
             visitor_error!("Unsupported symbol", ctx)
         }

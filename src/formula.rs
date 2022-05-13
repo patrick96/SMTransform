@@ -23,6 +23,7 @@ impl std::fmt::Display for ResultKind {
 
 pub type BoxedExpr = Rc<RefCell<Expr>>;
 
+#[derive(Debug)]
 pub enum Expr {
     Const(SpecConstant),
     Id(String),
@@ -216,7 +217,7 @@ impl Visitor for VariableCollector {
  * * `(set-info :status ...)` is present
  * * Sequence of assertions without assertion stacks followed by a `check-sat` query
  */
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Formula {
     pub constraints: Vec<BoxedExpr>,
     pub global_vars: HashMap<String, Type>,
@@ -287,9 +288,9 @@ impl Formula {
                         if let Some(attr_value) = &attr.value {
                             let status_str = attr_value.to_string();
                             status = match status_str.as_str() {
-                                "sat" | "|sat|" => ResultKind::SAT,
-                                "unsat" | "|unsat|" => ResultKind::UNSAT,
-                                "unknown" | "|unknown|" => ResultKind::UNKNOWN,
+                                "sat" => ResultKind::SAT,
+                                "unsat" => ResultKind::UNSAT,
+                                "unknown" => ResultKind::UNKNOWN,
                                 s => return Err(format!("Unsupported status: '{}'", s)),
                             }
                         } else {

@@ -22,7 +22,26 @@ struct Args {
     #[clap(long, default_value_t = 0)]
     seed: u64,
 
+    #[clap(long, default_value_t = 1)]
+    rounds: u64,
+
+    #[clap(long)]
+    json: bool,
+
     file: String,
+}
+
+fn dump_formula(f: &Formula, json: bool) -> String {
+    let script = f.to_script();
+    if json {
+        json!({
+            "smtlib": script.to_string(),
+            "status": f.status.to_string(),
+        })
+        .to_string()
+    } else {
+        script.to_string()
+    }
 }
 
 fn main() -> Result<(), String> {
@@ -36,23 +55,13 @@ fn main() -> Result<(), String> {
 
     let mut prng = Pcg32::seed_from_u64(args.seed);
 
-    let j = json!({
-        "smtlib": current.to_script().to_string(),
-        "status": current.status.to_string(),
-    });
+    println!("{}", dump_formula(&current, args.json));
 
-    println!("{}", j);
-
-    for _ in 1..10 {
+    for _ in 0..args.rounds {
         current = transformations::replace_variable(&mut prng, current)?;
         current = transformations::do_fusion(&mut prng, current)?;
 
-        let j = json!({
-            "smtlib": current.to_script().to_string(),
-            "status": current.status.to_string(),
-        });
-
-        println!("{}", j);
+        println!("{}", dump_formula(&current, args.json));
     }
 
     Ok(())

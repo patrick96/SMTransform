@@ -167,7 +167,7 @@ impl<'a> Fusion<'a> {
             .insert(self.new_variable.clone(), target_type.clone());
 
         self.formula.commands.push(Command::DeclareFun(
-            self.new_variable.clone().into(),
+            Symbol::new(self.new_variable.clone()),
             Vec::new(),
             Sort::new(Identifier::Id("Int".into()), &[]),
         ));
@@ -216,7 +216,7 @@ impl<'a> VariableReplacer<'a> {
             if let Command::DeclareFun(name, args, return_sort) = cmd {
                 if name.s == self.target {
                     declaration = Some(Command::DeclareFun(
-                        self.replacement.clone().into(),
+                        Symbol::new(self.replacement.clone()),
                         args.clone(),
                         return_sort.clone(),
                     ));
@@ -274,8 +274,6 @@ pub fn do_fusion(rng: &mut dyn RngCore, f: Formula) -> Result<Formula, String> {
 
     gen.reserve(f.global_vars.keys());
     let new_variable = gen.generate();
-
-    dbg!(&f.global_vars);
 
     let mut targets: Vec<String> = f
         .global_vars
