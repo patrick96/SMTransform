@@ -11,7 +11,6 @@ antlr-rust = { git = "https://github.com/rrevenantt/antlr4rust", rev = "4eecc87e
 rand = "0.8.5"
 rand_pcg = "0.3.1"
 serde_json = "1"
-itertools = "0.10.3"
 clap = { version = "3", features = ["derive"] }
 regex = "1"
 lazy_static = "1.4.0"

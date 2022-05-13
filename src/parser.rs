@@ -3,7 +3,7 @@ pub mod smtlibv2listener;
 pub mod smtlibv2parser;
 pub mod smtlibv2visitor;
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt::Display;
 
 use lazy_static::lazy_static;
@@ -31,7 +31,7 @@ pub type HexDecimal = String;
 pub type Binary = String;
 pub type Keyword = String;
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Symbol {
     pub s: String,
     quoted: bool,
@@ -396,14 +396,14 @@ impl Display for Command {
 #[derive(Debug)]
 pub struct Script {
     pub commands: Vec<Command>,
-    pub global_vars: HashMap<String, Type>,
+    pub global_vars: BTreeMap<String, Type>,
 }
 
 impl Script {
     pub fn new() -> Self {
         Script {
             commands: Vec::new(),
-            global_vars: HashMap::new(),
+            global_vars: BTreeMap::new(),
         }
     }
 }
@@ -423,7 +423,7 @@ type VisitorError = (String, Interval);
 type VisitorResult<T> = Result<T, VisitorError>;
 
 struct Listener {
-    global_vars: HashMap<String, Type>,
+    global_vars: BTreeMap<String, Type>,
 }
 
 macro_rules! visitor_error {
@@ -434,7 +434,7 @@ macro_rules! visitor_error {
 impl Listener {
     fn new() -> Self {
         Listener {
-            global_vars: HashMap::new(),
+            global_vars: BTreeMap::new(),
         }
     }
 
@@ -464,7 +464,7 @@ impl Listener {
     fn command(&mut self, ctx: &CommandContextAll) -> VisitorResult<Command> {
         if ctx.cmd_assert().is_some() {
             Ok(Command::Assert(
-                self.term(&*ctx.term(0).unwrap(), HashMap::new())?,
+                self.term(&*ctx.term(0).unwrap(), BTreeMap::new())?,
             ))
         } else if ctx.cmd_declareConst().is_some() {
             let name = self.symbol(&*ctx.symbol(0).unwrap())?;
@@ -504,7 +504,7 @@ impl Listener {
                 .map(|sorted_var| self.sorted_var(&*sorted_var))
                 .collect::<VisitorResult<Vec<(Symbol, Sort)>>>()?;
 
-            let local_vars = HashMap::from_iter(
+            let local_vars = BTreeMap::from_iter(
                 args.clone()
                     .into_iter()
                     .map(|(sym, sort)| (sym, Type::from(&[], &sort))),
@@ -543,7 +543,7 @@ impl Listener {
     fn term(
         &self,
         ctx: &TermContextAll,
-        mut local_vars: HashMap<Symbol, Type>,
+        mut local_vars: BTreeMap<Symbol, Type>,
     ) -> VisitorResult<Term> {
         /*
          * term
@@ -601,7 +601,7 @@ impl Listener {
     fn var_binding(
         &self,
         ctx: &Var_bindingContextAll,
-        local_vars: HashMap<Symbol, Type>,
+        local_vars: BTreeMap<Symbol, Type>,
     ) -> VisitorResult<(Symbol, Term)> {
         Ok((
             self.symbol(&*ctx.symbol().unwrap())?,
@@ -646,7 +646,7 @@ impl Listener {
     fn qual_identifier(
         &self,
         ctx: &Qual_identifierContextAll,
-        local_vars: &HashMap<Symbol, Type>,
+        local_vars: &BTreeMap<Symbol, Type>,
     ) -> VisitorResult<Identifier> {
         if ctx.GRW_As().is_some() {
             visitor_error!("'as' identifiers no supported", ctx)
@@ -660,7 +660,7 @@ impl Listener {
     fn identifier(
         &self,
         ctx: &IdentifierContextAll,
-        local_vars: &HashMap<Symbol, Type>,
+        local_vars: &BTreeMap<Symbol, Type>,
     ) -> VisitorResult<Identifier> {
         if ctx.GRW_Underscore().is_some() {
             let symbol = self.symbol(&*ctx.symbol().unwrap())?;
@@ -703,7 +703,7 @@ impl Listener {
 
     fn sort(&self, ctx: &SortContextAll) -> VisitorResult<Sort> {
         Ok(Sort {
-            name: self.identifier(&*ctx.identifier().unwrap(), &HashMap::new())?,
+            name: self.identifier(&*ctx.identifier().unwrap(), &BTreeMap::new())?,
             sorts: ctx
                 .sort_all()
                 .iter()

@@ -3,7 +3,6 @@ use std::ops::DerefMut;
 use crate::formula::*;
 use crate::parser::*;
 use crate::var_generator::VariableGenerator;
-use itertools::Itertools;
 use rand::prelude::IteratorRandom;
 use rand::Rng;
 use rand::RngCore;
@@ -254,7 +253,6 @@ pub fn replace_variable(rng: &mut dyn RngCore, formula: Formula) -> Result<Formu
         .global_vars
         .iter()
         .map(|(name, _)| name)
-        .sorted()
         .choose(rng)
         .map(String::clone);
 
@@ -279,7 +277,6 @@ pub fn do_fusion(rng: &mut dyn RngCore, f: Formula) -> Result<Formula, String> {
         .global_vars
         .iter()
         .filter_map(|(name, t)| if *t == Type::Int { Some(name) } else { None })
-        .sorted()
         .choose_multiple(rng, 2)
         .into_iter()
         .map(String::clone)

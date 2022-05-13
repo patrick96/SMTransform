@@ -1,6 +1,6 @@
 use crate::parser::*;
 
-use std::{cell::RefCell, collections::HashMap, ops::Deref, rc::Rc};
+use std::{cell::RefCell, collections::BTreeMap, ops::Deref, rc::Rc};
 
 #[derive(Clone, Debug)]
 pub enum ResultKind {
@@ -220,7 +220,7 @@ impl Visitor for VariableCollector {
 #[derive(Clone, Debug)]
 pub struct Formula {
     pub constraints: Vec<BoxedExpr>,
-    pub global_vars: HashMap<String, Type>,
+    pub global_vars: BTreeMap<String, Type>,
 
     /**
      * Commands from the original [Script] that have to be emitted as-is
