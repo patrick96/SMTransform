@@ -108,10 +108,10 @@ fn fusion_mul(targets: &(String, String), new_variable: &String, replacee: &Stri
             Expr::op("*", vec![z.into(), y.clone().into()]),
         )
     } else {
-        // y = if (mod x y) == 0 then x / z else y
+        // y = if (mod x y) == 0 then x div z else y
         template(
             y.clone().into(),
-            Expr::op("/", vec![x.clone().into(), z.into()]),
+            Expr::op("div", vec![x.clone().into(), z.into()]),
         )
     }
 }
