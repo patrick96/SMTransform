@@ -210,6 +210,29 @@ impl Visitor for VariableCollector {
     }
 }
 
+pub struct AllVariableCollector {
+    pub map: BTreeMap<String, Vec<BoxedExpr>>,
+}
+
+impl AllVariableCollector {
+    pub fn new() -> Self {
+        Self {
+            map: BTreeMap::new(),
+        }
+    }
+}
+
+impl Visitor for AllVariableCollector {
+    fn visit_variable(&mut self, e: &BoxedExpr, var: &Var) {
+        if var.global {
+            self.map
+                .entry(var.name.clone())
+                .or_insert(Vec::new())
+                .push(e.clone())
+        }
+    }
+}
+
 /**
  * Simplified version of [Script] with some assumptions.
  *
@@ -244,6 +267,16 @@ pub struct Formula {
 }
 
 impl Formula {
+    pub fn collect_all_occurences(&self) -> BTreeMap<String, Vec<BoxedExpr>> {
+        let mut collector = AllVariableCollector::new();
+
+        for expr in &self.constraints {
+            collector.visit_expr(expr);
+        }
+
+        collector.map
+    }
+
     pub fn collect_occurences(&self, name: &str) -> Vec<BoxedExpr> {
         let mut collector = VariableCollector::new(name.to_string());
 
@@ -252,6 +285,18 @@ impl Formula {
         }
 
         collector.vars
+    }
+
+    pub fn add_global(&mut self, name: &String, t: Type) {
+        self.global_vars.insert(name.clone(), t.clone());
+
+        let (arg_sorts, return_sort) = t.to_sorts();
+
+        self.commands.push(Command::DeclareFun(
+            Symbol::new(name.clone()),
+            arg_sorts,
+            return_sort,
+        ));
     }
 
     pub fn from(script: &Script) -> Result<Formula, String> {

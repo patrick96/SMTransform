@@ -101,8 +101,14 @@ pub enum Type {
     Bool,
     Real,
     String,
-    Fun(String),
-    Other(String),
+    /**
+     * Unknown non-function type
+     */
+    Other(Sort),
+    /**
+     * Arbitrary function type
+     */
+    Fun(String, Vec<Sort>, Sort),
     /*
      * Used for variable definitions without a specified type (e.g. let-bindings)
      */
@@ -110,23 +116,57 @@ pub enum Type {
 }
 
 impl Type {
+    pub fn from_simple(result: &Sort) -> Self {
+        Self::from(&[], result)
+    }
+
     fn from(args: &[Sort], result: &Sort) -> Type {
         if args.is_empty() {
-            // TODO handle |Int| ...
             match result.to_string().as_str() {
                 "Int" => Type::Int,
                 "Bool" => Type::Bool,
                 "Real" => Type::Real,
                 "String" => Type::String,
-                s => Type::Other(s.to_string()),
+                _ => Type::Other(result.clone()),
             }
         } else {
-            Type::Fun(format!(
-                "{} {}",
-                args.iter()
-                    .fold(String::new(), |a, b| format!("{} {}", a, b)),
-                result
-            ))
+            Type::Fun(
+                format!(
+                    "{} {}",
+                    args.iter()
+                        .fold(String::new(), |a, b| format!("{} {}", a, b)),
+                    result
+                ),
+                Vec::from(args),
+                result.clone(),
+            )
+        }
+    }
+
+    pub fn to_sorts(self) -> (Vec<Sort>, Sort) {
+        use Type::*;
+
+        match self {
+            Int => (Vec::new(), Sort::new_simple("Int")),
+            Bool => (Vec::new(), Sort::new_simple("Bool")),
+            Real => (Vec::new(), Sort::new_simple("Real")),
+            String => (Vec::new(), Sort::new_simple("String")),
+            Other(s) => (Vec::new(), s),
+            Fun(_, args, s) => (args, s),
+            Unknown => unreachable!(),
+        }
+    }
+}
+
+impl From<Type> for Sort {
+    fn from(t: Type) -> Self {
+        use Type::*;
+        match t {
+            Int => Sort::new_simple("Int"),
+            Bool => Sort::new_simple("Bool"),
+            Real => Sort::new_simple("Real"),
+            String => Sort::new_simple("String"),
+            _ => panic!("Cannot convert type '{:?}' to formula", t),
         }
     }
 }
@@ -191,18 +231,28 @@ impl From<Symbol> for Identifier {
     }
 }
 
-#[derive(Debug, Clone)]
+impl From<&str> for Identifier {
+    fn from(s: &str) -> Self {
+        Identifier::Id(s.to_string())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Sort {
-    name: Identifier,
+    name: String,
     sorts: Vec<Sort>,
 }
 
 impl Sort {
-    pub fn new(name: Identifier, sorts: &[Sort]) -> Self {
+    pub fn new(name: String, sorts: &[Sort]) -> Self {
         Self {
             name,
             sorts: Vec::from(sorts),
         }
+    }
+
+    pub fn new_simple(name: &str) -> Self {
+        Sort::new(name.into(), &[])
     }
 }
 
@@ -469,7 +519,7 @@ impl Listener {
         } else if ctx.cmd_declareConst().is_some() {
             let name = self.symbol(&*ctx.symbol(0).unwrap())?;
             let return_sort = self.sort(&*ctx.sort(0).unwrap())?;
-            let fun_type = Type::from(&[], &return_sort);
+            let fun_type = Type::from_simple(&return_sort);
 
             if let Err(msg) = self.add_global(&name, &fun_type) {
                 return visitor_error!(msg.as_str(), ctx);
@@ -507,7 +557,7 @@ impl Listener {
             let local_vars = BTreeMap::from_iter(
                 args.clone()
                     .into_iter()
-                    .map(|(sym, sort)| (sym, Type::from(&[], &sort))),
+                    .map(|(sym, sort)| (sym, Type::from_simple(&sort))),
             );
 
             let return_sort = self.sort(&*def_ctx.sort().unwrap())?;
@@ -703,7 +753,9 @@ impl Listener {
 
     fn sort(&self, ctx: &SortContextAll) -> VisitorResult<Sort> {
         Ok(Sort {
-            name: self.identifier(&*ctx.identifier().unwrap(), &BTreeMap::new())?,
+            name: self
+                .identifier(&*ctx.identifier().unwrap(), &BTreeMap::new())?
+                .to_string(),
             sorts: ctx
                 .sort_all()
                 .iter()

@@ -18,7 +18,6 @@ struct Fusion<'a> {
     formula: Formula,
     targets: (String, String),
     new_variable: String,
-    selected_fusion: usize,
     rng: &'a mut dyn RngCore,
 }
 
@@ -126,16 +125,17 @@ impl<'a> Fusion<'a> {
             formula,
             targets,
             new_variable,
-            selected_fusion: 0,
             rng,
         }
     }
 
     fn run(&mut self) {
-        self.selected_fusion = self.rng.gen_range(0..FUSIONS.len());
+        let selected_fusion = self.rng.gen_range(0..FUSIONS.len());
 
-        let all_x = self.formula.collect_occurences(self.targets.0.as_str());
-        let all_y = self.formula.collect_occurences(self.targets.1.as_str());
+        let occurences = self.formula.collect_all_occurences();
+
+        let all_x = occurences[&self.targets.0].clone();
+        let all_y = occurences[&self.targets.1].clone();
 
         let num_x = self.rng.gen_range(1..=all_x.len());
         let occ_x = all_x.into_iter().choose_multiple(&mut self.rng, num_x);
@@ -144,7 +144,7 @@ impl<'a> Fusion<'a> {
         let occ_y = all_y.into_iter().choose_multiple(&mut self.rng, num_y);
 
         for occ in occ_x {
-            occ.replace(FUSIONS[self.selected_fusion](
+            occ.replace(FUSIONS[selected_fusion](
                 &self.targets,
                 &self.new_variable,
                 &self.targets.0,
@@ -152,24 +152,14 @@ impl<'a> Fusion<'a> {
         }
 
         for occ in occ_y {
-            occ.replace(FUSIONS[self.selected_fusion](
+            occ.replace(FUSIONS[selected_fusion](
                 &self.targets,
                 &self.new_variable,
                 &self.targets.1,
             ));
         }
 
-        let target_type = Type::Int;
-
-        self.formula
-            .global_vars
-            .insert(self.new_variable.clone(), target_type.clone());
-
-        self.formula.commands.push(Command::DeclareFun(
-            Symbol::new(self.new_variable.clone()),
-            Vec::new(),
-            Sort::new(Identifier::Id("Int".into()), &[]),
-        ));
+        self.formula.add_global(&self.new_variable, Type::Int);
     }
 }
 
@@ -209,34 +199,17 @@ impl<'a> VariableReplacer<'a> {
             }
         }
 
-        let mut declaration = None;
-
-        for cmd in &self.formula.commands {
-            if let Command::DeclareFun(name, args, return_sort) = cmd {
-                if name.s == self.target {
-                    declaration = Some(Command::DeclareFun(
-                        Symbol::new(self.replacement.clone()),
-                        args.clone(),
-                        return_sort.clone(),
-                    ));
-                }
-            }
-        }
-
         let target_type = self.formula.global_vars[&self.target].clone();
 
         self.formula
-            .global_vars
-            .insert(self.replacement.clone(), target_type.clone());
-
-        self.formula.commands.push(declaration.unwrap());
+            .add_global(&self.replacement, target_type.clone());
 
         self.formula.constraints.push(
             Expr::op(
                 "=",
                 vec![
                     Var::new(self.target.clone(), target_type.clone()).into(),
-                    Var::new(self.replacement.clone(), target_type.clone()).into(),
+                    Var::new(self.replacement.clone(), target_type).into(),
                 ],
             )
             .to_boxed(),
