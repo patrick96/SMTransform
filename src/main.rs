@@ -12,7 +12,7 @@ mod parser;
 mod transformations;
 mod var_generator;
 
-use crate::formula::Formula;
+use crate::{formula::Formula, transformations::Transformation};
 use serde_json::json;
 
 #[derive(Parser, Debug)]
@@ -31,14 +31,17 @@ struct Args {
     file: String,
 }
 
-fn dump_formula(f: &Formula, json: bool) -> String {
+fn dump_formula(f: &Formula, round: u64, base: &serde_json::Value, json: bool) -> String {
     let script = f.to_script();
     if json {
-        json!({
-            "smtlib": script.to_string(),
-            "status": f.status.to_string(),
-        })
-        .to_string()
+        let mut data = base.clone();
+        let object = data.as_object_mut().unwrap();
+
+        object.insert("smtlib".into(), script.to_string().into());
+        object.insert("status".into(), f.status.to_string().into());
+        object.insert("round".into(), round.into());
+
+        data.to_string()
     } else {
         script.to_string()
     }
@@ -46,7 +49,12 @@ fn dump_formula(f: &Formula, json: bool) -> String {
 
 fn main() -> Result<(), String> {
     let args = Args::parse();
-    eprintln!("{}", args.file);
+
+    let json_base = json!({
+            "base": args.file.clone(),
+            "seed": args.seed,
+    });
+
     let contents = fs::read_to_string(args.file).unwrap();
     let script = crate::parser::parse(contents.as_str())?;
     let formula = Formula::from(&script)?;
@@ -55,13 +63,12 @@ fn main() -> Result<(), String> {
 
     let mut prng = Pcg32::seed_from_u64(args.seed);
 
-    println!("{}", dump_formula(&current, args.json));
+    println!("{}", dump_formula(&current, 0, &json_base, args.json));
 
-    for _ in 0..args.rounds {
-        current = transformations::replace_variable(&mut prng, current)?;
-        current = transformations::do_fusion(&mut prng, current)?;
+    for round in 1..=args.rounds {
+        current = Transformation::next(&mut prng).run(&mut prng, current)?;
 
-        println!("{}", dump_formula(&current, args.json));
+        println!("{}", dump_formula(&current, round, &json_base, args.json));
     }
 
     Ok(())

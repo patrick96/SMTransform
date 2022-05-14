@@ -3,9 +3,43 @@ use std::ops::DerefMut;
 use crate::formula::*;
 use crate::parser::*;
 use crate::var_generator::VariableGenerator;
+use rand::distributions::Standard;
+use rand::prelude::Distribution;
 use rand::prelude::IteratorRandom;
+use rand::prelude::SliceRandom;
 use rand::Rng;
 use rand::RngCore;
+
+#[derive(Copy, Clone)]
+pub enum Transformation {
+    Fusion,
+    VariableReplacement,
+}
+
+impl Transformation {
+    pub fn all() -> &'static [Self] {
+        use Transformation::*;
+        &[Fusion, VariableReplacement]
+    }
+
+    pub fn next(rng: &mut dyn RngCore) -> Transformation {
+        rng.gen()
+    }
+
+    pub fn run(&self, rng: &mut dyn RngCore, f: Formula) -> Result<Formula, String> {
+        use Transformation::*;
+        match self {
+            Fusion => do_fusion(rng, f),
+            VariableReplacement => replace_variable(rng, f),
+        }
+    }
+}
+
+impl Distribution<Transformation> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Transformation {
+        *Transformation::all().choose(rng).unwrap()
+    }
+}
 
 /**
  * Given targets (x, y) and new variable z applies one of the following fusions:
@@ -213,7 +247,7 @@ impl<'a> VariableReplacer<'a> {
     }
 }
 
-pub fn replace_variable(rng: &mut dyn RngCore, formula: Formula) -> Result<Formula, String> {
+fn replace_variable(rng: &mut dyn RngCore, formula: Formula) -> Result<Formula, String> {
     let mut gen = VariableGenerator::new();
     gen.reserve(formula.global_vars.keys());
     let new_variable = gen.generate();
@@ -236,7 +270,7 @@ pub fn replace_variable(rng: &mut dyn RngCore, formula: Formula) -> Result<Formu
     Ok(replacer.formula)
 }
 
-pub fn do_fusion(rng: &mut dyn RngCore, f: Formula) -> Result<Formula, String> {
+fn do_fusion(rng: &mut dyn RngCore, f: Formula) -> Result<Formula, String> {
     let mut gen = VariableGenerator::new();
 
     gen.reserve(f.global_vars.keys());

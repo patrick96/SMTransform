@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import pprint
 import fileinput
 import json
 import argparse
@@ -117,6 +118,7 @@ if __name__ == "__main__":
                 continue
 
             print(j['smtlib'])
-            result.print()
-            print(json.dumps(result, default=lambda o: o.__dict__, indent=4))
+            pprint.pprint(j)
+            print(f'result: {result.type()}')
+            pprint.pprint(result)
             sys.exit(1)
