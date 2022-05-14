@@ -54,20 +54,16 @@ fn fusion_symmetric(
  * For z = x - y (x = z + y, y = x - z)
  */
 fn fusion_sub(targets: &(String, String), new_variable: &String, replacee: &String) -> Expr {
+    let x = Var::new(targets.0.clone(), Type::Int);
+    let y = Var::new(targets.1.clone(), Type::Int);
     let z = Var::new(new_variable.clone(), Type::Int);
 
     if replacee == &targets.0 {
         // x = z + y
-        Expr::op(
-            "+",
-            vec![z.into(), Var::new(targets.1.clone(), Type::Int).into()],
-        )
+        Expr::op("+", vec![z.into(), y.into()])
     } else {
         // y = x - z
-        Expr::op(
-            "+",
-            vec![Var::new(targets.0.clone(), Type::Int).into(), z.into()],
-        )
+        Expr::op("-", vec![x.into(), z.into()])
     }
 }
 
