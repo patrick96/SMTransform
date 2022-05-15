@@ -114,7 +114,11 @@ if __name__ == "__main__":
 
         if result.type() != 'success' or result.stdout != [j['status']]:
             if result.type() == 'timeout':
-                print('timeout')
+                print(f'{j["round"]}: timeout')
+                continue
+
+            if result.stdout == ['unknown']:
+                print(f'{j["round"]}: unknown')
                 continue
 
             print(j['smtlib'])
