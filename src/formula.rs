@@ -1,4 +1,4 @@
-use crate::parser::*;
+use crate::{parser::*, var_generator::VariableGenerator};
 
 use std::{cell::RefCell, collections::BTreeMap, ops::Deref, rc::Rc};
 
@@ -246,6 +246,13 @@ pub struct Formula {
     pub global_vars: BTreeMap<String, Type>,
 
     /**
+     * Variable generator for this formula.
+     *
+     * Will never generate variable names that are already used (including local variables)
+     */
+    pub gen: VariableGenerator,
+
+    /**
      * Commands from the original [Script] that have to be emitted as-is
      */
     pub commands: Vec<Command>,
@@ -299,7 +306,47 @@ impl Formula {
         ));
     }
 
-    pub fn from(script: &Script) -> Result<Formula, String> {
+    pub fn to_script(&self) -> Script {
+        let mut script = Script::new();
+        let cmds = &mut script.commands;
+
+        if let Some(version) = &self.smt_lib_version {
+            cmds.push(Command::SetInfo(Attribute {
+                keyword: ":smt-lib-version".into(),
+                value: Some(AttributeValue::SpecConstant(SpecConstant::String(
+                    version.clone(),
+                ))),
+            }));
+        }
+
+        if let Some(logic) = &self.logic {
+            cmds.push(Command::SetLogic(logic.clone()));
+        }
+
+        cmds.push(Command::SetInfo(Attribute {
+            keyword: ":status".into(),
+            value: Some(AttributeValue::SpecConstant(SpecConstant::String(
+                self.status.to_string(),
+            ))),
+        }));
+
+        cmds.extend(self.commands.clone());
+
+        for assertion in &self.constraints {
+            cmds.push(Command::Assert(Expr::to_owned(assertion).into()));
+        }
+
+        cmds.push(Command::CheckSat);
+        cmds.push(Command::Exit);
+
+        script
+    }
+}
+
+impl TryFrom<Script> for Formula {
+    type Error = String;
+
+    fn try_from(script: Script) -> Result<Self, Self::Error> {
         let mut logic = None;
         let mut status = ResultKind::UNKNOWN;
         let mut smt_lib_version = None;
@@ -308,7 +355,7 @@ impl Formula {
 
         let mut check_sat_seen = false;
 
-        for command in &script.commands {
+        for command in script.commands {
             use Command::*;
             match command {
                 Assert(term) => {
@@ -358,47 +405,12 @@ impl Formula {
 
         Ok(Formula {
             constraints,
+            global_vars: script.global_vars,
+            gen: script.gen,
             commands,
             logic,
-            global_vars: script.global_vars.clone(),
             status,
             smt_lib_version,
         })
-    }
-
-    pub fn to_script(&self) -> Script {
-        let mut script = Script::new();
-        let cmds = &mut script.commands;
-
-        if let Some(version) = &self.smt_lib_version {
-            cmds.push(Command::SetInfo(Attribute {
-                keyword: ":smt-lib-version".into(),
-                value: Some(AttributeValue::SpecConstant(SpecConstant::String(
-                    version.clone(),
-                ))),
-            }));
-        }
-
-        if let Some(logic) = &self.logic {
-            cmds.push(Command::SetLogic(logic.clone()));
-        }
-
-        cmds.push(Command::SetInfo(Attribute {
-            keyword: ":status".into(),
-            value: Some(AttributeValue::SpecConstant(SpecConstant::String(
-                self.status.to_string(),
-            ))),
-        }));
-
-        cmds.extend(self.commands.clone());
-
-        for assertion in &self.constraints {
-            cmds.push(Command::Assert(Expr::to_owned(assertion).into()));
-        }
-
-        cmds.push(Command::CheckSat);
-        cmds.push(Command::Exit);
-
-        script
     }
 }

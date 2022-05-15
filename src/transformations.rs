@@ -2,7 +2,6 @@ use std::ops::DerefMut;
 
 use crate::formula::*;
 use crate::parser::*;
-use crate::var_generator::VariableGenerator;
 use rand::distributions::Standard;
 use rand::prelude::Distribution;
 use rand::prelude::IteratorRandom;
@@ -247,12 +246,13 @@ impl<'a> VariableReplacer<'a> {
     }
 }
 
-fn replace_variable(rng: &mut dyn RngCore, formula: Formula) -> Result<Formula, String> {
-    let mut gen = VariableGenerator::new();
-    gen.reserve(formula.global_vars.keys());
-    let new_variable = gen.generate();
+fn replace_variable(rng: &mut dyn RngCore, mut f: Formula) -> Result<Formula, String> {
+    let new_variable = f.gen.generate();
 
-    let target = formula
+    /*
+     * Select arbitrary target variable
+     */
+    let target = f
         .global_vars
         .iter()
         .map(|(name, _)| name)
@@ -260,7 +260,7 @@ fn replace_variable(rng: &mut dyn RngCore, formula: Formula) -> Result<Formula, 
         .map(String::clone);
 
     let mut replacer = VariableReplacer::new(
-        formula,
+        f,
         target.ok_or("No target variable found".to_string())?,
         new_variable,
         rng,
@@ -270,12 +270,12 @@ fn replace_variable(rng: &mut dyn RngCore, formula: Formula) -> Result<Formula, 
     Ok(replacer.formula)
 }
 
-fn do_fusion(rng: &mut dyn RngCore, f: Formula) -> Result<Formula, String> {
-    let mut gen = VariableGenerator::new();
+fn do_fusion(rng: &mut dyn RngCore, mut f: Formula) -> Result<Formula, String> {
+    let new_variable = f.gen.generate();
 
-    gen.reserve(f.global_vars.keys());
-    let new_variable = gen.generate();
-
+    /*
+     * Find two integer variables to fuse
+     */
     let mut targets: Vec<String> = f
         .global_vars
         .iter()

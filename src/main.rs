@@ -57,7 +57,7 @@ fn main() -> Result<(), String> {
 
     let contents = fs::read_to_string(args.file).unwrap();
     let script = crate::parser::parse(contents.as_str())?;
-    let formula = Formula::from(&script)?;
+    let formula = script.try_into()?;
 
     let mut current = formula;
 

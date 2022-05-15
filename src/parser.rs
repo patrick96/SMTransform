@@ -25,6 +25,8 @@ use smtlibv2lexer::SMTLIBv2Lexer;
 use smtlibv2listener::SMTLIBv2Listener;
 use smtlibv2parser::*;
 
+use crate::var_generator::VariableGenerator;
+
 pub type Numeral = String;
 pub type Decimal = String;
 pub type HexDecimal = String;
@@ -443,18 +445,21 @@ impl Display for Command {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Script {
     pub commands: Vec<Command>,
     pub global_vars: BTreeMap<String, Type>,
+    /**
+     * Variable generator for this script.
+     *
+     * Will never generate variable names that are already used (including local variables)
+     */
+    pub gen: VariableGenerator,
 }
 
 impl Script {
     pub fn new() -> Self {
-        Script {
-            commands: Vec::new(),
-            global_vars: BTreeMap::new(),
-        }
+        Script::default()
     }
 }
 
@@ -472,8 +477,10 @@ impl Display for Script {
 type VisitorError = (String, Interval);
 type VisitorResult<T> = Result<T, VisitorError>;
 
+#[derive(Default)]
 struct Listener {
     global_vars: BTreeMap<String, Type>,
+    gen: VariableGenerator,
 }
 
 macro_rules! visitor_error {
@@ -481,19 +488,22 @@ macro_rules! visitor_error {
         Err(($msg.to_string(), $ctx.get_source_interval()))
     };
 }
-impl Listener {
-    fn new() -> Self {
-        Listener {
-            global_vars: BTreeMap::new(),
-        }
-    }
 
+impl Listener {
     fn add_global(&mut self, name: &Symbol, t: &Type) -> Result<(), String> {
         if self.global_vars.contains_key(&name.s) {
             return Err(format!("Global variable '{}' already exists", name));
         }
 
         self.global_vars.insert(name.clone().into(), t.clone());
+
+        /*
+         * This should only fail if we generate a new variable name (e.g. to rename let-bindings in
+         * a DefineFun) and that name is also later used to define another variable.
+         */
+        if !self.gen.reserve_one(name.s.clone()) {
+            return Err(format!("A variable with name '{}' already exists", name));
+        }
 
         Ok(())
     }
@@ -508,6 +518,7 @@ impl Listener {
         Ok(Script {
             commands,
             global_vars: self.global_vars.clone(),
+            gen: self.gen.clone(),
         })
     }
 
@@ -548,17 +559,21 @@ impl Listener {
 
             let name = self.symbol(&*def_ctx.symbol().unwrap())?;
 
-            let args = def_ctx
+            let mut args = def_ctx
                 .sorted_var_all()
                 .iter()
                 .map(|sorted_var| self.sorted_var(&*sorted_var))
                 .collect::<VisitorResult<Vec<(Symbol, Sort)>>>()?;
 
-            let local_vars = BTreeMap::from_iter(
-                args.clone()
-                    .into_iter()
-                    .map(|(sym, sort)| (sym, Type::from_simple(&sort))),
-            );
+            let mut local_vars = BTreeMap::default();
+
+            for (ref mut name, sort) in &mut args {
+                let new_name = self.gen.generate();
+                // Insert type and name replacement
+                local_vars.insert(name.clone(), (new_name.clone(), Type::from_simple(sort)));
+
+                *name = Symbol::new(new_name);
+            }
 
             let return_sort = self.sort(&*def_ctx.sort().unwrap())?;
             let term = self.term(&*def_ctx.term().unwrap(), local_vars)?;
@@ -591,9 +606,9 @@ impl Listener {
     }
 
     fn term(
-        &self,
+        &mut self,
         ctx: &TermContextAll,
-        mut local_vars: BTreeMap<Symbol, Type>,
+        mut local_vars: BTreeMap<Symbol, (String, Type)>,
     ) -> VisitorResult<Term> {
         /*
          * term
@@ -629,14 +644,18 @@ impl Listener {
                 ))
             }
         } else if ctx.GRW_Let().is_some() {
-            let bindings = ctx
+            let mut bindings = ctx
                 .var_binding_all()
                 .iter()
                 .map(|var_binding| self.var_binding(var_binding, local_vars.clone()))
                 .collect::<VisitorResult<Vec<(Symbol, Term)>>>()?;
 
-            for (name, _) in &bindings {
-                local_vars.insert(name.clone(), Type::Unknown);
+            for (ref mut name, _) in &mut bindings {
+                let new_name = self.gen.generate();
+                // Insert type and name replacement
+                local_vars.insert(name.clone(), (new_name.clone(), Type::Unknown));
+
+                *name = Symbol::new(new_name);
             }
 
             Ok(Term::Let(
@@ -649,9 +668,9 @@ impl Listener {
     }
 
     fn var_binding(
-        &self,
+        &mut self,
         ctx: &Var_bindingContextAll,
-        local_vars: BTreeMap<Symbol, Type>,
+        local_vars: BTreeMap<Symbol, (String, Type)>,
     ) -> VisitorResult<(Symbol, Term)> {
         Ok((
             self.symbol(&*ctx.symbol().unwrap())?,
@@ -696,7 +715,7 @@ impl Listener {
     fn qual_identifier(
         &self,
         ctx: &Qual_identifierContextAll,
-        local_vars: &BTreeMap<Symbol, Type>,
+        local_vars: &BTreeMap<Symbol, (String, Type)>,
     ) -> VisitorResult<Identifier> {
         if ctx.GRW_As().is_some() {
             visitor_error!("'as' identifiers no supported", ctx)
@@ -710,7 +729,7 @@ impl Listener {
     fn identifier(
         &self,
         ctx: &IdentifierContextAll,
-        local_vars: &BTreeMap<Symbol, Type>,
+        local_vars: &BTreeMap<Symbol, (String, Type)>,
     ) -> VisitorResult<Identifier> {
         if ctx.GRW_Underscore().is_some() {
             let symbol = self.symbol(&*ctx.symbol().unwrap())?;
@@ -728,8 +747,8 @@ impl Listener {
         } else if let Some(symbol) = ctx.symbol() {
             let sym = self.symbol(&*symbol)?;
 
-            if let Some(t) = local_vars.get(&sym) {
-                Ok(Var::new_local(sym.into(), t.clone()).into())
+            if let Some((new_name, t)) = local_vars.get(&sym) {
+                Ok(Var::new_local(new_name.clone(), t.clone()).into())
             } else if let Some(t) = self.global_vars.get(&sym.s) {
                 Ok(Var::new(sym.into(), t.clone()).into())
             } else {
@@ -820,7 +839,7 @@ pub fn parse(script: &str) -> Result<Script, String> {
     lexer.add_error_listener(Box::new(PanicErrorListener {}));
     let token_source = CommonTokenStream::new(lexer);
     let mut parser = SMTLIBv2Parser::new(token_source);
-    let listener_id = parser.add_parse_listener(Box::new(Listener::new()));
+    let listener_id = parser.add_parse_listener(Box::new(Listener::default()));
     parser.add_error_listener(Box::new(PanicErrorListener {}));
     let result = parser.start();
     assert!(result.is_ok());

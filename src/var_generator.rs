@@ -1,16 +1,14 @@
 use std::collections::HashSet;
 
+#[derive(Debug, Default, Clone)]
 pub struct VariableGenerator {
     taken: HashSet<String>,
     counter: i32,
 }
 
 impl VariableGenerator {
-    pub fn new() -> Self {
-        Self {
-            taken: HashSet::new(),
-            counter: 0,
-        }
+    pub fn reserve_one(&mut self, name: String) -> bool {
+        self.taken.insert(name)
     }
 
     pub fn reserve<'a>(&mut self, names: impl IntoIterator<Item = &'a String>) {
