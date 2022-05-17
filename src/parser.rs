@@ -278,6 +278,28 @@ impl Display for Sort {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum ConstType {
+    Numeral,
+    Decimal,
+    HexDecimal,
+    Binary,
+    String,
+}
+
+impl From<&SpecConstant> for ConstType {
+    fn from(c: &SpecConstant) -> Self {
+        use ConstType::*;
+        match c {
+            SpecConstant::Numeral(_) => Numeral,
+            SpecConstant::Decimal(_) => Decimal,
+            SpecConstant::HexDecimal(_) => HexDecimal,
+            SpecConstant::Binary(_) => Binary,
+            SpecConstant::String(_) => String,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum SpecConstant {
     Numeral(Numeral),

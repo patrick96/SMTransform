@@ -1,3 +1,4 @@
+mod const_replacer;
 mod fusion;
 mod var_replacer;
 
@@ -12,12 +13,13 @@ use rand::RngCore;
 pub enum Transformation {
     Fusion,
     VariableReplacement,
+    ConstantReplacement,
 }
 
 impl Transformation {
     pub fn all() -> &'static [Self] {
         use Transformation::*;
-        &[Fusion, VariableReplacement]
+        &[Fusion, VariableReplacement, ConstantReplacement]
     }
 
     pub fn next(rng: &mut dyn RngCore) -> Transformation {
@@ -29,6 +31,7 @@ impl Transformation {
         match self {
             Fusion => fusion::do_fusion(rng, f),
             VariableReplacement => var_replacer::replace_variable(rng, f),
+            ConstantReplacement => const_replacer::replacer_const(rng, f),
         }
     }
 }

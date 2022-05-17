@@ -147,6 +147,12 @@ impl From<Var> for Expr {
 }
 
 trait Visitor {
+    fn run(&mut self, f: &Formula) {
+        for expr in &f.constraints {
+            self.visit_expr(expr);
+        }
+    }
+
     fn visit_expr(&mut self, expr: &BoxedExpr) {
         use Expr::*;
         match (*expr).borrow().deref() {
@@ -188,9 +194,9 @@ trait Visitor {
     fn visit_variable(&mut self, _e: &BoxedExpr, _var: &Var) {}
 }
 
-pub struct VariableCollector {
+struct VariableCollector {
     target: String,
-    pub vars: Vec<BoxedExpr>,
+    vars: Vec<BoxedExpr>,
 }
 
 impl VariableCollector {
@@ -210,12 +216,12 @@ impl Visitor for VariableCollector {
     }
 }
 
-pub struct AllVariableCollector {
-    pub map: BTreeMap<String, Vec<BoxedExpr>>,
+struct AllVariableCollector {
+    map: BTreeMap<String, Vec<BoxedExpr>>,
 }
 
 impl AllVariableCollector {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             map: BTreeMap::new(),
         }
@@ -230,6 +236,17 @@ impl Visitor for AllVariableCollector {
                 .or_insert(Vec::new())
                 .push(e.clone())
         }
+    }
+}
+
+#[derive(Default)]
+struct ConstCollector {
+    consts: Vec<(BoxedExpr, ConstType)>,
+}
+
+impl Visitor for ConstCollector {
+    fn visit_const(&mut self, e: &BoxedExpr, c: &SpecConstant) {
+        self.consts.push((e.clone(), c.into()));
     }
 }
 
@@ -276,22 +293,20 @@ pub struct Formula {
 impl Formula {
     pub fn collect_all_occurences(&self) -> BTreeMap<String, Vec<BoxedExpr>> {
         let mut collector = AllVariableCollector::new();
-
-        for expr in &self.constraints {
-            collector.visit_expr(expr);
-        }
-
+        collector.run(self);
         collector.map
     }
 
     pub fn collect_occurences(&self, name: &str) -> Vec<BoxedExpr> {
         let mut collector = VariableCollector::new(name.to_string());
-
-        for expr in &self.constraints {
-            collector.visit_expr(expr);
-        }
-
+        collector.run(self);
         collector.vars
+    }
+
+    pub fn collect_constants(&self) -> Vec<(BoxedExpr, ConstType)> {
+        let mut collector = ConstCollector::default();
+        collector.run(self);
+        collector.consts
     }
 
     pub fn add_global(&mut self, name: &String, t: Type) {
