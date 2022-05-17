@@ -1,3 +1,5 @@
+//! Given targets (x, y) and new variable z applies a fusion function.
+
 use rand::prelude::IteratorRandom;
 use rand::Rng;
 use rand::RngCore;
@@ -5,22 +7,14 @@ use rand::RngCore;
 use crate::formula::*;
 use crate::parser::*;
 
-/**
- * Given targets (x, y) and new variable z applies one of the following fusions:
- *
- * z = x + y (x = z - y, y = z - x)
- * z = x * y (x = z div y, y = z div x)
- * z = x - y (x = z + y, y = x - z)
- */
-struct Fusion<'a> {
-    formula: Formula,
-    targets: (String, String),
-    new_variable: String,
-    rng: &'a mut dyn RngCore,
-}
-
 static FUSIONS: [fn(&(String, String), &String, &String) -> Expr; 4] = [
+    /*
+     * z = x + y (x = z - y, y = z - x)
+     */
     |targets, new_variable, replacee| fusion_symmetric(targets, new_variable, replacee, "-"),
+    /*
+     * z = x * y (x = z div y, y = z div x)
+     */
     |targets, new_variable, replacee| fusion_symmetric(targets, new_variable, replacee, "div"),
     fusion_sub,
     fusion_div,
@@ -117,62 +111,13 @@ fn fusion_div(targets: &(String, String), new_variable: &String, replacee: &Stri
     }
 }
 
-impl<'a> Fusion<'a> {
-    fn new(
-        formula: Formula,
-        targets: (String, String),
-        new_variable: String,
-        rng: &'a mut dyn RngCore,
-    ) -> Self {
-        Self {
-            formula,
-            targets,
-            new_variable,
-            rng,
-        }
-    }
-
-    fn run(&mut self) {
-        let selected_fusion = self.rng.gen_range(0..FUSIONS.len());
-
-        let occurences = self.formula.collect_all_occurences();
-
-        let all_x = occurences[&self.targets.0].clone();
-        let all_y = occurences[&self.targets.1].clone();
-
-        let num_x = self.rng.gen_range(1..=all_x.len());
-        let occ_x = all_x.into_iter().choose_multiple(&mut self.rng, num_x);
-
-        let num_y = self.rng.gen_range(1..=all_y.len());
-        let occ_y = all_y.into_iter().choose_multiple(&mut self.rng, num_y);
-
-        for occ in occ_x {
-            occ.replace(FUSIONS[selected_fusion](
-                &self.targets,
-                &self.new_variable,
-                &self.targets.0,
-            ));
-        }
-
-        for occ in occ_y {
-            occ.replace(FUSIONS[selected_fusion](
-                &self.targets,
-                &self.new_variable,
-                &self.targets.1,
-            ));
-        }
-
-        self.formula.add_global(&self.new_variable, Type::Int);
-    }
-}
-
 pub fn do_fusion(rng: &mut dyn RngCore, mut f: Formula) -> Result<Formula, String> {
     let new_variable = f.gen.generate();
 
     /*
      * Find two integer variables to fuse
      */
-    let mut targets: Vec<String> = f
+    let mut vars: Vec<String> = f
         .global_vars
         .iter()
         .filter_map(|(name, t)| if *t == Type::Int { Some(name) } else { None })
@@ -181,20 +126,33 @@ pub fn do_fusion(rng: &mut dyn RngCore, mut f: Formula) -> Result<Formula, Strin
         .map(String::clone)
         .collect();
 
-    if targets.len() < 2 {
+    if vars.len() < 2 {
         return Err(format!(
             "Not enough variables available, required 2, found {}",
-            targets.len()
+            vars.len()
         ));
     }
 
-    let mut fusion = Fusion::new(
-        f,
-        (targets.pop().unwrap(), targets.pop().unwrap()),
-        new_variable,
-        rng,
-    );
-    fusion.run();
+    let selected_fusion = rng.gen_range(0..FUSIONS.len());
 
-    Ok(fusion.formula)
+    let occurences = f.collect_all_occurences();
+    let targets = (vars.pop().unwrap(), vars.pop().unwrap());
+
+    let mut apply_fusion = |target| {
+        let all = occurences[target].clone();
+
+        let num_vars = rng.gen_range(1..=all.len());
+        let occurrences = all.into_iter().choose_multiple(rng, num_vars);
+
+        for occ in occurrences {
+            occ.replace(FUSIONS[selected_fusion](&targets, &new_variable, &target));
+        }
+    };
+
+    apply_fusion(&targets.0);
+    apply_fusion(&targets.1);
+
+    f.add_global(&new_variable, Type::Int);
+
+    Ok(f)
 }
