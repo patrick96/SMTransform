@@ -58,7 +58,7 @@ static FUSIONS: [fn(&(String, String), &String, &String) -> Expr; 4] = [
     |targets, new_variable, replacee| fusion_symmetric(targets, new_variable, replacee, "-"),
     |targets, new_variable, replacee| fusion_symmetric(targets, new_variable, replacee, "div"),
     fusion_sub,
-    fusion_mul,
+    fusion_div,
 ];
 
 /**
@@ -103,10 +103,10 @@ fn fusion_sub(targets: &(String, String), new_variable: &String, replacee: &Stri
 /**
  * For z = x / y
  *
- * x = if (mod x y) == 0 then  z * y else x
- * y = if (mod x y) == 0 then  x / z else y
+ * x = if (mod x y) == 0 and y != 0 then  z * y else x
+ * y = if (mod x y) == 0 and y != 0 then  x / z else y
  */
-fn fusion_mul(targets: &(String, String), new_variable: &String, replacee: &String) -> Expr {
+fn fusion_div(targets: &(String, String), new_variable: &String, replacee: &String) -> Expr {
     let x = Var::new(targets.0.clone(), Type::Int);
     let y = Var::new(targets.1.clone(), Type::Int);
     let z = Var::new(new_variable.clone(), Type::Int);
@@ -116,14 +116,23 @@ fn fusion_mul(targets: &(String, String), new_variable: &String, replacee: &Stri
             "ite",
             vec![
                 Expr::op(
-                    "=",
+                    "and",
                     vec![
-                        Expr::op("mod", vec![x.clone().into(), y.clone().into()]),
-                        SpecConstant::Numeral("0".to_string()).into(),
+                        Expr::op(
+                            "=",
+                            vec![
+                                Expr::op("mod", vec![x.clone().into(), y.clone().into()]),
+                                SpecConstant::numeral(0).into(),
+                            ],
+                        ),
+                        Expr::op(
+                            "distinct",
+                            vec![y.clone().into(), SpecConstant::numeral(0).into()],
+                        ),
                     ],
                 ),
                 op,     // then
-                target, // else
+                target, // else fallback
             ],
         )
     };

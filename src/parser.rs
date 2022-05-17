@@ -287,6 +287,12 @@ pub enum SpecConstant {
     String(String),
 }
 
+impl SpecConstant {
+    pub fn numeral(n: i32) -> Self {
+        SpecConstant::Numeral(n.to_string())
+    }
+}
+
 impl Display for SpecConstant {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use SpecConstant::*;
