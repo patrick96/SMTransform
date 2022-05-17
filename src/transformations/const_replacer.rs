@@ -29,6 +29,7 @@ impl<'a> ConstReplacer<'a> {
                  */
                 ConstType::Numeral => Some((e, Type::Int)),
                 ConstType::String => Some((e, Type::String)),
+                ConstType::Bool => Some((e, Type::Bool)),
                 _ => None,
             })
             .choose(self.rng)

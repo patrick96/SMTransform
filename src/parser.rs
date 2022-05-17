@@ -71,6 +71,8 @@ mod tests {
     #[test]
     fn test_simple_symbol() {
         assert!(Symbol::new("Int".to_string()).is_simple());
+        assert!(Symbol::new("true".to_string()).is_simple());
+        assert!(Symbol::new("false".to_string()).is_simple());
         assert!(Symbol::new("sat".to_string()).is_simple());
         assert!(Symbol::new("v0".to_string()).is_simple());
     }
@@ -285,6 +287,10 @@ pub enum ConstType {
     HexDecimal,
     Binary,
     String,
+    /**
+     * For `true` and `false` "constants".
+     */
+    Bool,
 }
 
 impl From<&SpecConstant> for ConstType {

@@ -244,9 +244,20 @@ struct ConstCollector {
     consts: Vec<(BoxedExpr, ConstType)>,
 }
 
+/**
+ * Collects all constants in a formula.
+ *
+ * Constants include [SpecConstant] as well as `true` and `false`.
+ */
 impl Visitor for ConstCollector {
     fn visit_const(&mut self, e: &BoxedExpr, c: &SpecConstant) {
         self.consts.push((e.clone(), c.into()));
+    }
+
+    fn visit_id(&mut self, e: &BoxedExpr, ident: &String) {
+        if ident == "true" || ident == "false" {
+            self.consts.push((e.clone(), ConstType::Bool));
+        }
     }
 }
 
