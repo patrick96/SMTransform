@@ -47,6 +47,14 @@ fn dump_formula(f: &Formula, round: u64, base: &serde_json::Value, json: bool) -
     }
 }
 
+/**
+ * TODOs
+ * Also replace local variables (all variable names are unique, so targetting is possible)
+ * Only replace variables with multiple usages and leave at least one
+ * Add transformation perparation step (add Transformation trait) in which feasibility is tested
+ *     (e.g. are vars available?) otherwise the round is repeated with a different transformation
+ *     (fail if all transformations fail)
+ */
 fn main() -> Result<(), String> {
     let args = Args::parse();
 
