@@ -7,47 +7,71 @@ use rand::RngCore;
 use crate::formula::*;
 use crate::parser::*;
 
-pub fn replace_variable(rng: &mut dyn RngCore, mut f: Formula) -> Result<Formula, String> {
-    let new_variable = f.gen.generate();
+use super::Transformation;
 
-    /*
-     * Select arbitrary target variable
-     */
-    let target = f
-        .global_vars
-        .iter()
-        .map(|(name, _)| name)
-        .choose(rng)
-        .map(String::clone)
-        .ok_or("No target variable found".to_string())?;
+pub struct VarReplacer {
+    target: String,
+    target_type: Type,
+    target_occs: Vec<BoxedExpr>,
+}
 
-    let all = f.collect_occurences(target.as_str());
+impl VarReplacer {
+    pub fn new(rng: &mut dyn RngCore, f: &Formula) -> Result<Self, String> {
+        let occurences = f.collect_all_occurences(false);
+        let (target, target_type, target_occs) = occurences
+            .into_iter()
+            .filter_map(|(name, (var, occs))| {
+                if occs.len() >= 2 && var.t != Type::Unknown {
+                    Some((name, var.t, occs))
+                } else {
+                    None
+                }
+            })
+            .choose(rng)
+            .ok_or("No viable target variable found".to_string())?;
 
-    let num = rng.gen_range(1..=all.len());
-    let occs = all.into_iter().choose_multiple(rng, num);
-
-    for occ in occs {
-        if let Expr::Var(var) = occ.borrow_mut().deref_mut() {
-            var.name = new_variable.to_string();
-        } else {
-            unreachable!();
-        }
+        Ok(Self {
+            target,
+            target_type,
+            target_occs,
+        })
     }
+}
 
-    let target_type = f.global_vars[&target].clone();
+impl Transformation for VarReplacer {
+    fn run(&mut self, rng: &mut dyn RngCore, mut f: Formula) -> Result<Formula, String> {
+        let new_variable = f.gen.generate();
 
-    f.add_global(&new_variable, target_type.clone());
+        /*
+         * Replace at least one variable and leave at least one
+         */
+        let num = rng.gen_range(1..=(self.target_occs.len() - 1));
+        let occs = self.target_occs.iter().choose_multiple(rng, num);
 
-    f.constraints.push(
-        Expr::op(
-            "=",
-            vec![
-                Var::new(target.clone(), target_type.clone()).into(),
-                Var::new(new_variable.clone(), target_type).into(),
-            ],
-        )
-        .to_boxed(),
-    );
+        assert!(!occs.is_empty());
 
-    Ok(f)
+        for occ in occs {
+            if let Expr::Var(var) = occ.borrow_mut().deref_mut() {
+                var.name = new_variable.clone();
+                var.global = true;
+            } else {
+                unreachable!();
+            }
+        }
+
+        f.add_global(&new_variable, self.target_type.clone());
+
+        f.constraints.push(
+            Expr::op(
+                "=",
+                vec![
+                    Var::new(self.target.clone(), self.target_type.clone()).into(),
+                    Var::new(new_variable.clone(), self.target_type.clone()).into(),
+                ],
+            )
+            .to_boxed(),
+        );
+
+        Ok(f)
+    }
 }

@@ -217,24 +217,28 @@ impl Visitor for VariableCollector {
 }
 
 struct AllVariableCollector {
-    map: BTreeMap<String, Vec<BoxedExpr>>,
+    map: BTreeMap<String, (Var, Vec<BoxedExpr>)>,
+    global_only: bool,
 }
 
 impl AllVariableCollector {
-    fn new() -> Self {
+    fn new(global_only: bool) -> Self {
         Self {
             map: BTreeMap::new(),
+            global_only,
         }
     }
 }
 
 impl Visitor for AllVariableCollector {
     fn visit_variable(&mut self, e: &BoxedExpr, var: &Var) {
-        if var.global {
-            self.map
+        if !self.global_only || var.global {
+            let (_, exprs) = self
+                .map
                 .entry(var.name.clone())
-                .or_insert(Vec::new())
-                .push(e.clone())
+                .or_insert((var.clone(), Vec::new()));
+
+            exprs.push(e.clone())
         }
     }
 }
@@ -302,8 +306,11 @@ pub struct Formula {
 }
 
 impl Formula {
-    pub fn collect_all_occurences(&self) -> BTreeMap<String, Vec<BoxedExpr>> {
-        let mut collector = AllVariableCollector::new();
+    pub fn collect_all_occurences(
+        &self,
+        global_only: bool,
+    ) -> BTreeMap<String, (Var, Vec<BoxedExpr>)> {
+        let mut collector = AllVariableCollector::new(global_only);
         collector.run(self);
         collector.map
     }

@@ -12,7 +12,7 @@ mod parser;
 mod transformations;
 mod var_generator;
 
-use crate::{formula::Formula, transformations::Transformation};
+use crate::{formula::Formula, transformations::Transformations};
 use serde_json::json;
 
 #[derive(Parser, Debug)]
@@ -47,14 +47,6 @@ fn dump_formula(f: &Formula, round: u64, base: &serde_json::Value, json: bool) -
     }
 }
 
-/**
- * TODOs
- * Also replace local variables (all variable names are unique, so targetting is possible)
- * Only replace variables with multiple usages and leave at least one
- * Add transformation perparation step (add Transformation trait) in which feasibility is tested
- *     (e.g. are vars available?) otherwise the round is repeated with a different transformation
- *     (fail if all transformations fail)
- */
 fn main() -> Result<(), String> {
     let args = Args::parse();
 
@@ -73,10 +65,38 @@ fn main() -> Result<(), String> {
 
     println!("{}", dump_formula(&current, 0, &json_base, args.json));
 
-    for round in 1..=args.rounds {
-        current = Transformation::next(&mut prng).run(&mut prng, current)?;
+    /*
+     * Incrementally apply one transformation each round
+     */
+    'rounds: for round in 1..=args.rounds {
+        let mut tried_transformations: Vec<Transformations> = Vec::new();
 
-        println!("{}", dump_formula(&current, round, &json_base, args.json));
+        loop {
+            if Transformations::is_all_transformations(tried_transformations.as_slice()) {
+                eprintln!("No viable transformations available, terminating early.");
+                break 'rounds;
+            }
+
+            let transformation = Transformations::next(&mut prng, &tried_transformations);
+            let rest = transformation.instance(&mut prng, &current);
+
+            match rest {
+                Ok(mut inst) => {
+                    // Apply the transformation. Errors here are fatal
+                    current = inst.run(&mut prng, current)?;
+
+                    println!("{}", dump_formula(&current, round, &json_base, args.json));
+                    break;
+                }
+                Err(err) => {
+                    /*
+                     * If the transformation isn't viable, we skip it
+                     */
+                    eprintln!("Skipping transformation {:?}: {}", transformation, err);
+                    tried_transformations.push(transformation);
+                }
+            }
+        }
     }
 
     Ok(())
