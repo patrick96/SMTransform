@@ -11,13 +11,13 @@ use super::Transformation;
 
 static FUSIONS: [fn(&String, &String, &String, &String) -> Expr; 4] = [
     /*
-     * z = x + y (x = z - y, y = z - x)
+     * `z = x + y` (`x = z - y`, `y = z - x`)
      */
     |target_x, target_y, new_variable, replacee| {
         fusion_symmetric(target_x, target_y, new_variable, replacee, "-")
     },
     /*
-     * z = x * y (x = z div y, y = z div x)
+     * `z = x * y` (`x = z div y`, `y = z div x`)
      */
     |target_x, target_y, new_variable, replacee| {
         fusion_symmetric(target_x, target_y, new_variable, replacee, "div")
@@ -50,7 +50,7 @@ fn fusion_symmetric(
 }
 
 /**
- * For z = x - y (x = z + y, y = x - z)
+ * For `z = x - y (x = z + y, y = x - z)`
  */
 fn fusion_sub(
     target_x: &String,
@@ -72,10 +72,10 @@ fn fusion_sub(
 }
 
 /**
- * For z = x / y
+ * For `z = x / y`
  *
- * x = if (mod x y) == 0 and y != 0 then  z * y else x
- * y = if (mod x y) == 0 and y != 0 then  x / z else y
+ * * `x = if (mod x y) == 0 and y != 0 then  z * y else x`
+ * * `y = if (mod x y) == 0 and y != 0 then  x / z else y`
  */
 fn fusion_div(
     target_x: &String,
