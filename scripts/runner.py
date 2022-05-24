@@ -8,79 +8,14 @@ import sys
 import signal
 from subprocess import TimeoutExpired
 from dataclasses import dataclass
+from typing import Optional
+from enum import Enum
 
-TIMEOUT = 10
+TIMEOUT = 1
 
 
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
-
-
-@dataclass
-class RunResult:
-    cmd: [str]
-    stdout: [str]
-    stderr: [str]
-    exitcode: int
-
-    @staticmethod
-    def get(cmd: [str], stdout: [str], stderr: [str], exitcode: int):
-        if exitcode == 0:
-            return SuccessResult(cmd=cmd,
-                                 stdout=stdout,
-                                 stderr=stderr,
-                                 exitcode=0)
-        elif exitcode > 0:
-            return FailureResult(cmd=cmd,
-                                 stdout=stdout,
-                                 stderr=stderr,
-                                 exitcode=exitcode)
-        elif exitcode < 0:
-            sig = signal.Signals(abs(exitcode)).name
-            return SignalResult(cmd=cmd,
-                                stdout=stdout,
-                                stderr=stderr,
-                                exitcode=exitcode,
-                                signal=sig)
-
-    def is_success(self):
-        return False
-
-    def is_timeout(self):
-        return False
-
-    def is_signal(self):
-        return False
-
-
-@dataclass
-class TimeoutResult(RunResult):
-    timeout: int
-
-    def is_timeout(self):
-        return True
-
-
-@dataclass
-class SignalResult(RunResult):
-    """self.exitcode < 0"""
-    signal: str
-
-    def is_signal(self):
-        return True
-
-
-@dataclass
-class FailureResult(RunResult):
-    """self.exitcode > 0"""
-
-
-@dataclass
-class SuccessResult(RunResult):
-    """self.exitcode == 0"""
-
-    def is_success(self):
-        return True
 
 
 @dataclass
@@ -102,40 +37,134 @@ class Input:
         )
 
 
-def run_cmd(cmd, input):
+class ResultKind(Enum):
+    Success = 0
+    Failure = 1
+    Timeout = 2
+    Signal = 3
+
+
+@dataclass
+class RunResult:
+    input: Input
+    cmd: [str]
+    stdout: [str]
+    stderr: [str]
+    exitcode: int
+
+    def is_unsound(self):
+        return self.stdout != [self.input.status]
+
+    @staticmethod
+    def get(input: Input, cmd: [str], stdout: [str], stderr: [str],
+            exitcode: int):
+        if exitcode == 0:
+            return SuccessResult(input=input,
+                                 cmd=cmd,
+                                 stdout=stdout,
+                                 stderr=stderr,
+                                 exitcode=0)
+        elif exitcode > 0:
+            return FailureResult(input=input,
+                                 cmd=cmd,
+                                 stdout=stdout,
+                                 stderr=stderr,
+                                 exitcode=exitcode)
+        elif exitcode < 0:
+            sig = signal.Signals(abs(exitcode)).name
+            return SignalResult(input=input,
+                                cmd=cmd,
+                                stdout=stdout,
+                                stderr=stderr,
+                                exitcode=exitcode,
+                                signal=sig)
+
+    def is_success(self):
+        return False
+
+    def is_timeout(self):
+        return False
+
+    def is_signal(self):
+        return False
+
+    def get_kind(self) -> ResultKind:
+        raise NotImplementedError()
+
+
+@dataclass
+class TimeoutResult(RunResult):
+    timeout: int
+
+    def is_timeout(self):
+        return True
+
+    def get_kind(self) -> ResultKind:
+        return ResultKind.Timeout
+
+
+@dataclass
+class SignalResult(RunResult):
+    """self.exitcode < 0"""
+    signal: str
+
+    def is_signal(self):
+        return True
+
+    def get_kind(self) -> ResultKind:
+        return ResultKind.Signal
+
+
+@dataclass
+class FailureResult(RunResult):
+    """self.exitcode > 0"""
+
+    def get_kind(self) -> ResultKind:
+        return ResultKind.Failure
+
+
+@dataclass
+class SuccessResult(RunResult):
+    """self.exitcode == 0"""
+
+    def is_success(self):
+        return True
+
+    def get_kind(self) -> ResultKind:
+        return ResultKind.Success
+
+
+def run_cmd(cmd, input: Input) -> RunResult:
     assert cmd, "No command given"
     try:
         proc = subprocess.run(cmd,
                               timeout=TIMEOUT,
                               capture_output=True,
-                              input=input,
+                              input=input.smtlib,
                               text=True)
         code = proc.returncode
 
         stdout = list(proc.stdout.splitlines())
         stderr = list(proc.stderr.splitlines())
 
-        return RunResult.get(cmd, stdout, stderr, code)
+        return RunResult.get(input, cmd, stdout, stderr, code)
     except TimeoutExpired as ex:
-        return TimeoutResult(cmd=cmd,
+        return TimeoutResult(input=input,
+                             cmd=cmd,
                              stdout=ex.stdout if ex.stdout else [],
                              stderr=ex.stderr if ex.stderr else [],
                              exitcode=0,
                              timeout=TIMEOUT)
 
 
-def on_input(input: Input):
-    result = run_cmd(cmd, input.smtlib)
+def on_input(cmd: [str], line: str) -> Optional[RunResult]:
+    input = Input.get(json.loads(line))
+    result = run_cmd(cmd, input)
 
-    if not result.is_success() or result.stdout != [input.status]:
-        data = {
-            'input': input.__dict__,
-            'result': result.__dict__,
-        }
+    if not result.is_success() or result.is_unsound() or result.stderr:
+        return result
 
-        data['result']['type'] = type(result).__name__
-
-        print(json.dumps(data))
+    return None
 
 
 if __name__ == "__main__":
@@ -158,4 +187,10 @@ if __name__ == "__main__":
         sys.exit(1)
 
     for line in fileinput.input(['-']):
-        on_input(Input.get(json.loads(line)))
+        result = on_input(cmd, line)
+
+        if result:
+            data = result.__dict__
+            data['type'] = type(result).__name__
+
+            print(json.dumps(data, default=lambda o: o.__dict__))

@@ -3,20 +3,22 @@
 import argparse
 import subprocess
 import sys
-import json
 
 from pathlib import Path
 from subprocess import PIPE
+
+import runner
+from runner import RunResult, ResultKind
 
 
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
 
-def run(cmd: Path, runner: [str], seed: Path, rounds: int,
-        iterations: int) -> [dict]:
+def run(cmd: Path, solver: [str], seed: Path, rounds: int,
+        iterations: int) -> [RunResult]:
 
-    outputs = []
+    run_results = []
 
     for prng_seed in range(iterations):
         print(f'\rUsing seed {seed} {prng_seed + 1}/{iterations}', end='')
@@ -31,16 +33,17 @@ def run(cmd: Path, runner: [str], seed: Path, rounds: int,
                                 stderr=subprocess.DEVNULL,
                                 text=True)
 
-        output = subprocess.check_output(runner, stdin=proc.stdout,
-                                         text=True).splitlines()
-        proc.wait()
+        for line in proc.stdout:
+            run_result = runner.on_input(solver, line)
 
-        for line in output:
-            outputs.append(json.loads(line))
+            if run_result:
+                run_results.append(run_result)
+
+        proc.wait()
 
     print()
 
-    return outputs
+    return run_results
 
 
 if __name__ == "__main__":
@@ -85,14 +88,26 @@ if __name__ == "__main__":
         eprint(f"No seeds found in {args.seeds.resolve()}")
         sys.exit(1)
 
-    runner_cmd = Path(__file__).parent / "runner.py"
+    results: dict[ResultKind, [RunResult]] = {}
 
-    outputs = []
+    for kind in list(ResultKind):
+        results[kind] = []
 
     for seed in seeds:
-        outputs += run(args.gen, [runner_cmd, "--"] + cmd, seed, args.rounds,
-                       args.iterations)
+        run_results: [RunResult] = run(args.gen, cmd, seed, args.rounds,
+                                       args.iterations)
 
-    for output in outputs:
-        import pprint
-        pprint.pprint(output)
+        for run_result in run_results:
+            results.setdefault(run_result.get_kind(), []).append(run_result)
+
+    unsound : [RunResult] = []
+    for (kind, run_results) in results.items():
+        print(f'{kind}: {len(run_results)}')
+
+        for run_result in run_results:
+            if kind != ResultKind.Timeout and run_result.is_unsound():
+                unsound.append(run_result)
+
+    print(f'unsound: {len(unsound)}')
+
+    # TODO dump, unsound and everything except Success
