@@ -10,8 +10,9 @@ from subprocess import TimeoutExpired
 from dataclasses import dataclass
 from typing import Optional
 from enum import Enum
+from pathlib import Path
 
-TIMEOUT = 1
+TIMEOUT = 10
 
 
 def eprint(*args, **kwargs):
@@ -36,6 +37,9 @@ class Input:
             status=j['status'],
         )
 
+    def id(self):
+        return f"{self.base}_{self.seed}_{self.round}"
+
 
 class ResultKind(Enum):
     Success = 0
@@ -52,8 +56,16 @@ class RunResult:
     stderr: [str]
     exitcode: int
 
+    def to_json(self):
+        return json.dumps(self, default=lambda o: o.__dict__)
+
+    def dump(self, dir: Path):
+        with open(dir / (self.input.id() + ".json"), "w") as f:
+            f.write(self.to_json())
+
+
     def is_unsound(self):
-        return self.stdout != [self.input.status]
+        return self.stdout and self.stdout != [self.input.status]
 
     @staticmethod
     def get(input: Input, cmd: [str], stdout: [str], stderr: [str],
@@ -193,4 +205,4 @@ if __name__ == "__main__":
             data = result.__dict__
             data['type'] = type(result).__name__
 
-            print(json.dumps(data, default=lambda o: o.__dict__))
+            print(data.to_json())

@@ -10,7 +10,6 @@ from subprocess import PIPE
 import runner
 from runner import RunResult, ResultKind
 
-
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
@@ -54,6 +53,10 @@ if __name__ == "__main__":
                         help='Folder with seed formulas',
                         type=Path,
                         required=True)
+    parser.add_argument('--out',
+                        help='Folder for dumping files, must be empty',
+                        type=Path,
+                        required=False)
     parser.add_argument('--gen',
                         help='Generator executable',
                         type=Path,
@@ -88,6 +91,18 @@ if __name__ == "__main__":
         eprint(f"No seeds found in {args.seeds.resolve()}")
         sys.exit(1)
 
+    out = args.out
+
+    if out is not None:
+        if not out.is_dir():
+            eprint(f"Output folder '{out}' is not a folder")
+            sys.exit(1)
+
+        if any(out.iterdir()):
+            eprint(f"Output folder '{out}' is not empty")
+            sys.exit(1)
+
+
     results: dict[ResultKind, [RunResult]] = {}
 
     for kind in list(ResultKind):
@@ -104,10 +119,29 @@ if __name__ == "__main__":
     for (kind, run_results) in results.items():
         print(f'{kind}: {len(run_results)}')
 
+        # TODO do this for each seed and throw away RunResult
         for run_result in run_results:
             if kind != ResultKind.Timeout and run_result.is_unsound():
                 unsound.append(run_result)
 
+                dir = out / "unsound"
+                dir.mkdir(exist_ok=True)
+
+                run_result.dump(dir)
+
+            if not run_result.is_unsound() and run_result.get_kind() != ResultKind.Success:
+                dir = out / run_result.get_kind().name
+                dir.mkdir(exist_ok=True)
+
+                run_result.dump(dir)
+
     print(f'unsound: {len(unsound)}')
 
-    # TODO dump, unsound and everything except Success
+    runs_per_iter = args.rounds + 1
+    runs_per_seed = args.iterations * runs_per_iter
+    num_seeds = len(seeds)
+    total_runs = num_seeds * runs_per_seed
+
+    print(f'runs per iteration: {runs_per_iter}')
+    print(f'runs per seed: {runs_per_seed}')
+    print(f'total runs: {total_runs}')
