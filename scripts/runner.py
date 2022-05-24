@@ -9,12 +9,6 @@ import signal
 from subprocess import TimeoutExpired
 from dataclasses import dataclass
 
-# TODO post-process RunResult:
-# TODO detect sanitizer error
-# TODO detect correct/wrong output (requires oracle)
-# TODO may require per-solver class
-# TODO detect solver (error ...) messages
-
 TIMEOUT = 10
 
 
