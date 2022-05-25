@@ -91,9 +91,16 @@ if __name__ == "__main__":
         eprint(f"No seeds found in {args.seeds.resolve()}")
         sys.exit(1)
 
-    out = args.out
+    out : Path = args.out
 
     if out is not None:
+        if not out.exists():
+            out.mkdir(parents=True)
+
+        if not out.is_dir():
+            eprint(f"Output folder '{out}' is not a folder")
+            sys.exit(1)
+
         if not out.is_dir():
             eprint(f"Output folder '{out}' is not a folder")
             sys.exit(1)
@@ -113,6 +120,7 @@ if __name__ == "__main__":
                                        args.iterations)
 
         for run_result in run_results:
+            kind = run_result.get_kind()
             results.setdefault(run_result.get_kind(), []).append(run_result)
 
     unsound : [RunResult] = []

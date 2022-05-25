@@ -57,12 +57,14 @@ class RunResult:
     exitcode: int
 
     def to_json(self):
-        return json.dumps(self, default=lambda o: o.__dict__)
+        data = self.__dict__
+        data['input'] = self.input.__dict__
+        data['kind'] = self.get_kind().name
+        return json.dumps(data)
 
     def dump(self, dir: Path):
         with open(dir / (self.input.id() + ".json"), "w") as f:
             f.write(self.to_json())
-
 
     def is_unsound(self):
         return self.stdout and self.stdout != [self.input.status]
