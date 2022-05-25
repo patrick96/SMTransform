@@ -110,10 +110,10 @@ if __name__ == "__main__":
             sys.exit(1)
 
 
-    results: dict[ResultKind, [RunResult]] = {}
+    results: dict[ResultKind, int] = {}
 
     for kind in list(ResultKind):
-        results[kind] = []
+        results[kind] = 0
 
     for seed in seeds:
         run_results: [RunResult] = run(args.gen, cmd, seed, args.rounds,
@@ -121,35 +121,24 @@ if __name__ == "__main__":
 
         for run_result in run_results:
             kind = run_result.get_kind()
-            results.setdefault(run_result.get_kind(), []).append(run_result)
+            results[kind] += 1
 
-    unsound : [RunResult] = []
-    for (kind, run_results) in results.items():
-        print(f'{kind}: {len(run_results)}')
-
-        # TODO do this for each seed and throw away RunResult
-        for run_result in run_results:
-            if kind != ResultKind.Timeout and run_result.is_unsound():
-                unsound.append(run_result)
-
-                dir = out / "unsound"
+            if kind != ResultKind.Success:
+                dir = out / kind.name
                 dir.mkdir(exist_ok=True)
 
                 run_result.dump(dir)
 
-            if not run_result.is_unsound() and run_result.get_kind() != ResultKind.Success:
-                dir = out / run_result.get_kind().name
-                dir.mkdir(exist_ok=True)
 
-                run_result.dump(dir)
-
-    print(f'unsound: {len(unsound)}')
+    for (kind, num_results) in results.items():
+        print(f'{kind.name}: {num_results}')
 
     runs_per_iter = args.rounds + 1
     runs_per_seed = args.iterations * runs_per_iter
     num_seeds = len(seeds)
     total_runs = num_seeds * runs_per_seed
 
-    print(f'runs per iteration: {runs_per_iter}')
-    print(f'runs per seed: {runs_per_seed}')
-    print(f'total runs: {total_runs}')
+    print(f'Runs per iteration: {runs_per_iter}')
+    print(f'Runs per seed: {runs_per_seed}')
+    print(f'Seeds: {num_seeds}')
+    print(f'Total runs: {total_runs}')

@@ -46,6 +46,8 @@ class ResultKind(Enum):
     Failure = 1
     Timeout = 2
     Signal = 3
+    Unknown = 4
+    Unsound = 5
 
 
 @dataclass
@@ -67,17 +69,39 @@ class RunResult:
             f.write(self.to_json())
 
     def is_unsound(self):
-        return self.stdout and self.stdout != [self.input.status]
+        return False
 
     @staticmethod
     def get(input: Input, cmd: [str], stdout: [str], stderr: [str],
             exitcode: int):
         if exitcode == 0:
-            return SuccessResult(input=input,
+            if stdout == [input.status] and not stderr:
+                return SuccessResult(input=input,
+                                     cmd=cmd,
+                                     stdout=stdout,
+                                     stderr=stderr,
+                                     exitcode=exitcode)
+
+            if stdout == ["unknown"]:
+                return UnknownResult(input=input,
+                                     cmd=cmd,
+                                     stdout=stdout,
+                                     stderr=stderr,
+                                     exitcode=exitcode)
+
+            if stdout != [input.status]:
+                return UnsoundResult(input=input,
+                                     cmd=cmd,
+                                     stdout=stdout,
+                                     stderr=stderr,
+                                     exitcode=exitcode)
+
+            return FailureResult(input=input,
                                  cmd=cmd,
                                  stdout=stdout,
                                  stderr=stderr,
-                                 exitcode=0)
+                                 exitcode=exitcode)
+
         elif exitcode > 0:
             return FailureResult(input=input,
                                  cmd=cmd,
@@ -100,6 +124,9 @@ class RunResult:
         return False
 
     def is_signal(self):
+        return False
+
+    def is_unknown(self):
         return False
 
     def get_kind(self) -> ResultKind:
@@ -131,7 +158,15 @@ class SignalResult(RunResult):
 
 @dataclass
 class FailureResult(RunResult):
-    """self.exitcode > 0"""
+    """
+    Any failure that doesn't match other cases
+
+    For example:
+
+    * self.exitcode > 0
+    * self.stderr != []
+
+    """
 
     def get_kind(self) -> ResultKind:
         return ResultKind.Failure
@@ -139,13 +174,40 @@ class FailureResult(RunResult):
 
 @dataclass
 class SuccessResult(RunResult):
-    """self.exitcode == 0"""
+    """
+    Completely correct run
+
+    * self.exitcode = 0
+    * self.stderr == []
+    * self.stdout == [status]
+
+    """
 
     def is_success(self):
         return True
 
     def get_kind(self) -> ResultKind:
         return ResultKind.Success
+
+@dataclass
+class UnknownResult(RunResult):
+    """self.stdout == [unknown]"""
+
+    def is_unknown(self):
+        return True
+
+    def get_kind(self) -> ResultKind:
+        return ResultKind.Unknown
+
+@dataclass
+class UnsoundResult(RunResult):
+    """self.stdout == [unknown]"""
+
+    def is_unsound(self):
+        return True
+
+    def get_kind(self) -> ResultKind:
+        return ResultKind.Unsound
 
 
 def run_cmd(cmd, input: Input) -> RunResult:
@@ -155,7 +217,8 @@ def run_cmd(cmd, input: Input) -> RunResult:
                               timeout=TIMEOUT,
                               capture_output=True,
                               input=input.smtlib,
-                              text=True)
+                              text=True,
+                              encoding='utf-8')
         code = proc.returncode
 
         stdout = list(proc.stdout.splitlines())
@@ -165,8 +228,8 @@ def run_cmd(cmd, input: Input) -> RunResult:
     except TimeoutExpired as ex:
         return TimeoutResult(input=input,
                              cmd=cmd,
-                             stdout=ex.stdout if ex.stdout else [],
-                             stderr=ex.stderr if ex.stderr else [],
+                             stdout=list(ex.stdout.decode().splitlines()) if ex.stdout else [],
+                             stderr=list(ex.stderr.decode().splitlines()) if ex.stderr else [],
                              exitcode=0,
                              timeout=TIMEOUT)
 
@@ -174,11 +237,7 @@ def run_cmd(cmd, input: Input) -> RunResult:
 def on_input(cmd: [str], line: str) -> Optional[RunResult]:
     input = Input.get(json.loads(line))
     result = run_cmd(cmd, input)
-
-    if not result.is_success() or result.is_unsound() or result.stderr:
-        return result
-
-    return None
+    return result
 
 
 if __name__ == "__main__":
@@ -203,7 +262,8 @@ if __name__ == "__main__":
     for line in fileinput.input(['-']):
         result = on_input(cmd, line)
 
-        if result:
+
+        if not result.is_success() or result.is_unsound() or result.stderr:
             data = result.__dict__
             data['type'] = type(result).__name__
 
