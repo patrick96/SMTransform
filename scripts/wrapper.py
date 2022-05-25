@@ -26,7 +26,7 @@ def dump(result: RunResult, out: Path):
         return
 
     dir = out / kind.name
-    dir.mkdir(exist_ok=True)
+    dir.mkdir(exist_ok=True, parents=True)
 
     with open(dir / (result.input.id() + ".json"), "w") as f:
         f.write(result.to_json())
@@ -38,7 +38,7 @@ def run(cmd: Path, solver: [str], seed: Path, rounds: int,
     run_results: Counter[ResultKind, int] = Counter({})
 
     for prng_seed in range(iterations):
-        print(f'\rUsing seed {seed} {prng_seed + 1}/{iterations}: ', end='')
+        print(f'\33[2K\r\rUsing seed {seed} {prng_seed + 1}/{iterations}: ', end='')
         gen_cmd = [
             cmd, "--json", "--rounds",
             str(rounds), "--seed",
@@ -119,10 +119,6 @@ if __name__ == "__main__":
             eprint(f"Output folder '{out}' is not a folder")
             sys.exit(1)
 
-        if not out.is_dir():
-            eprint(f"Output folder '{out}' is not a folder")
-            sys.exit(1)
-
         if any(out.iterdir()):
             eprint(f"Output folder '{out}' is not empty")
             sys.exit(1)
@@ -136,9 +132,8 @@ if __name__ == "__main__":
     for seed in seeds:
         results += run(args.gen, cmd, seed, args.rounds, args.iterations, out)
 
-
-    for (kind, num_results) in results.items():
-        print(f'{kind.name}: {num_results}')
+    for kind in list(ResultKind):
+        print(f'{kind.name}: {results.get(kind, 0)}')
 
     runs_per_iter = args.rounds + 1
     runs_per_seed = args.iterations * runs_per_iter
