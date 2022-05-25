@@ -10,7 +10,6 @@ from subprocess import TimeoutExpired
 from dataclasses import dataclass
 from typing import Optional
 from enum import Enum
-from pathlib import Path
 
 TIMEOUT = 10
 
@@ -63,10 +62,6 @@ class RunResult:
         data['input'] = self.input.__dict__
         data['kind'] = self.get_kind().name
         return json.dumps(data)
-
-    def dump(self, dir: Path):
-        with open(dir / (self.input.id() + ".json"), "w") as f:
-            f.write(self.to_json())
 
     def is_unsound(self):
         return False
@@ -132,6 +127,9 @@ class RunResult:
     def get_kind(self) -> ResultKind:
         raise NotImplementedError()
 
+    def get_char(self) -> str:
+        raise NotImplementedError()
+
 
 @dataclass
 class TimeoutResult(RunResult):
@@ -142,6 +140,9 @@ class TimeoutResult(RunResult):
 
     def get_kind(self) -> ResultKind:
         return ResultKind.Timeout
+
+    def get_char(self) -> str:
+        return "T"
 
 
 @dataclass
@@ -154,6 +155,9 @@ class SignalResult(RunResult):
 
     def get_kind(self) -> ResultKind:
         return ResultKind.Signal
+
+    def get_char(self) -> str:
+        return "S"
 
 
 @dataclass
@@ -170,6 +174,9 @@ class FailureResult(RunResult):
 
     def get_kind(self) -> ResultKind:
         return ResultKind.Failure
+
+    def get_char(self) -> str:
+        return "F"
 
 
 @dataclass
@@ -189,6 +196,9 @@ class SuccessResult(RunResult):
     def get_kind(self) -> ResultKind:
         return ResultKind.Success
 
+    def get_char(self) -> str:
+        return "."
+
 @dataclass
 class UnknownResult(RunResult):
     """self.stdout == [unknown]"""
@@ -198,6 +208,9 @@ class UnknownResult(RunResult):
 
     def get_kind(self) -> ResultKind:
         return ResultKind.Unknown
+
+    def get_char(self) -> str:
+        return "U"
 
 @dataclass
 class UnsoundResult(RunResult):
@@ -209,6 +222,9 @@ class UnsoundResult(RunResult):
     def get_kind(self) -> ResultKind:
         return ResultKind.Unsound
 
+    def get_char(self) -> str:
+        return "#"
+
 
 def run_cmd(cmd, input: Input) -> RunResult:
     assert cmd, "No command given"
@@ -217,8 +233,7 @@ def run_cmd(cmd, input: Input) -> RunResult:
                               timeout=TIMEOUT,
                               capture_output=True,
                               input=input.smtlib,
-                              text=True,
-                              encoding='utf-8')
+                              text=True)
         code = proc.returncode
 
         stdout = list(proc.stdout.splitlines())
@@ -264,7 +279,4 @@ if __name__ == "__main__":
 
 
         if not result.is_success() or result.is_unsound() or result.stderr:
-            data = result.__dict__
-            data['type'] = type(result).__name__
-
-            print(data.to_json())
+            print(result.to_json())

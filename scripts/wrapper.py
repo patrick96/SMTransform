@@ -6,6 +6,7 @@ import sys
 
 from pathlib import Path
 from subprocess import PIPE
+from collections import Counter
 
 import runner
 from runner import RunResult, ResultKind
@@ -14,13 +15,30 @@ def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
 
-def run(cmd: Path, solver: [str], seed: Path, rounds: int,
-        iterations: int) -> [RunResult]:
+def dump(result: RunResult, out: Path):
+    # Only dump if a path was specified
+    if not out:
+        return
 
-    run_results = []
+    kind = result.get_kind()
+
+    if kind == ResultKind.Success:
+        return
+
+    dir = out / kind.name
+    dir.mkdir(exist_ok=True)
+
+    with open(dir / (result.input.id() + ".json"), "w") as f:
+        f.write(result.to_json())
+
+
+def run(cmd: Path, solver: [str], seed: Path, rounds: int,
+        iterations: int, out: Path) -> [RunResult]:
+
+    run_results: Counter[ResultKind, int] = Counter({})
 
     for prng_seed in range(iterations):
-        print(f'\rUsing seed {seed} {prng_seed + 1}/{iterations}', end='')
+        print(f'\rUsing seed {seed} {prng_seed + 1}/{iterations}: ', end='')
         gen_cmd = [
             cmd, "--json", "--rounds",
             str(rounds), "--seed",
@@ -34,9 +52,9 @@ def run(cmd: Path, solver: [str], seed: Path, rounds: int,
 
         for line in proc.stdout:
             run_result = runner.on_input(solver, line)
-
-            if run_result:
-                run_results.append(run_result)
+            run_results += Counter({run_result.get_kind(): 1})
+            dump(run_result, out)
+            print(run_result.get_char(), end='', flush=True)
 
         proc.wait()
 
@@ -109,25 +127,14 @@ if __name__ == "__main__":
             eprint(f"Output folder '{out}' is not empty")
             sys.exit(1)
 
+    else:
+        eprint("Warning: Running without dumping of results!")
 
-    results: dict[ResultKind, int] = {}
 
-    for kind in list(ResultKind):
-        results[kind] = 0
+    results: Counter[ResultKind, int] = Counter({})
 
     for seed in seeds:
-        run_results: [RunResult] = run(args.gen, cmd, seed, args.rounds,
-                                       args.iterations)
-
-        for run_result in run_results:
-            kind = run_result.get_kind()
-            results[kind] += 1
-
-            if kind != ResultKind.Success:
-                dir = out / kind.name
-                dir.mkdir(exist_ok=True)
-
-                run_result.dump(dir)
+        results += run(args.gen, cmd, seed, args.rounds, args.iterations, out)
 
 
     for (kind, num_results) in results.items():
