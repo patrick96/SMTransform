@@ -37,7 +37,7 @@ class Input:
         )
 
     def id(self):
-        return f"{self.base}_{self.seed}_{self.round}"
+        return f"{self.base.replace('/', '_')}_{self.seed}_{self.round}"
 
 
 class ResultKind(Enum):
