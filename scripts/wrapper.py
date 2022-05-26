@@ -49,19 +49,11 @@ def run(cmd: Path, solver: [str], seed: Path, rounds: int,
         ]
 
         with subprocess.Popen(gen_cmd, stdout=PIPE, stderr=subprocess.DEVNULL, text=True) as proc:
-            for round, line in enumerate(proc.stdout):
+            for line in proc.stdout:
                 run_result = runner.on_input(solver, line)
-
-                # If the formula times out in the first round (the original
-                # seed formula), skip the entire seed
-                if iter == 0 and round == 0 and run_result.is_timeout():
-                    print('K', flush=True)
-                    proc.terminate()
-                    return Counter({})
-                else:
-                    run_results += Counter({run_result.get_kind(): 1})
-                    dump(run_result, out)
-                    print(run_result.get_char(), end='', flush=True)
+                run_results += Counter({run_result.get_kind(): 1})
+                dump(run_result, out)
+                print(run_result.get_char(), end='', flush=True)
 
         proc.wait()
 
