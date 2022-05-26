@@ -151,4 +151,4 @@ if __name__ == "__main__":
     print(f'Runs per iteration (approx): {runs_per_iter}')
     print(f'Runs per seed (approx): {runs_per_seed}')
     print(f'Seeds: {num_seeds}')
-    print(f'Total runs: {results.total()}')
+    print(f'Total runs: {sum(1 for _ in results.elements())}')
