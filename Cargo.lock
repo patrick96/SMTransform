@@ -14,7 +14,7 @@ dependencies = [
 [[package]]
 name = "antlr-rust"
 version = "0.2.2"
-source = "git+https://github.com/patrick96/antlr4rust?branch=fix/build.rs#f4505a0dfc18e849da58dd22c8f8021a3b717f69"
+source = "git+https://github.com/patrick96/antlr4rust?branch=fix/build.rs#84d06b32a3e57f3edecd78184498af2e0edf521d"
 dependencies = [
  "better_any",
  "bit-set",

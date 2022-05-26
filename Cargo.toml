@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 # The newest tagged release doesn't work
+# antlr-rust = { path = "../antlr4rust" }
 antlr-rust = { git = "https://github.com/patrick96/antlr4rust", branch = "fix/build.rs" }
 rand = "0.8.5"
 rand_pcg = "0.3.1"
