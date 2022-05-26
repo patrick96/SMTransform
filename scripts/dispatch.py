@@ -92,10 +92,10 @@ class CVC5Runner:
     @staticmethod
     def get_cmd(asan: bool) -> (dict[str, str], [str]):
         ld_library_path = os.environ.get("LD_LIBRARY_PATH", "")
-        ld_library_path += str(CVC5Runner.get_exec(asan).parent.parent / 'lib')
+        ld_library_path += f":{CVC5Runner.get_exec(asan).parent.parent / 'lib64'}"
         return (
             {"LD_LIBRARY_PATH": ld_library_path},
-            [str(CVC5Runner.get_exec(asan)), '/dev/stdin']
+            [str(CVC5Runner.get_exec(asan)), '--lang', 'smt2.6', '-']
         )
 
 
