@@ -11,6 +11,7 @@ from collections import Counter
 import runner
 from runner import RunResult, ResultKind
 
+
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
@@ -37,24 +38,30 @@ def run(cmd: Path, solver: [str], seed: Path, rounds: int,
 
     run_results: Counter[ResultKind, int] = Counter({})
 
-    for prng_seed in range(iterations):
-        print(f'\33[2K\r\rUsing seed {seed} {prng_seed + 1}/{iterations}: ', end='')
+    for iter in range(iterations):
+        prng_seed = iter
+        print(
+            f'\33[2K\r\rUsing seed {seed} {prng_seed + 1}/{iterations}: ', end='')
         gen_cmd = [
             cmd, "--json", "--rounds",
             str(rounds), "--seed",
             str(prng_seed), seed
         ]
 
-        proc = subprocess.Popen(gen_cmd,
-                                stdout=PIPE,
-                                stderr=subprocess.DEVNULL,
-                                text=True)
+        with subprocess.Popen(gen_cmd, stdout=PIPE, stderr=subprocess.DEVNULL, text=True) as proc:
+            for round, line in enumerate(proc.stdout):
+                run_result = runner.on_input(solver, line)
 
-        for line in proc.stdout:
-            run_result = runner.on_input(solver, line)
-            run_results += Counter({run_result.get_kind(): 1})
-            dump(run_result, out)
-            print(run_result.get_char(), end='', flush=True)
+                # If the formula times out in the first round (the original
+                # seed formula), skip the entire seed
+                if iter == 0 and round == 0 and run_result.is_timeout():
+                    print('K', flush=True)
+                    proc.terminate()
+                    return Counter({})
+                else:
+                    run_results += Counter({run_result.get_kind(): 1})
+                    dump(run_result, out)
+                    print(run_result.get_char(), end='', flush=True)
 
         proc.wait()
 
@@ -109,7 +116,7 @@ if __name__ == "__main__":
         eprint(f"No seeds found in {args.seeds.resolve()}")
         sys.exit(1)
 
-    out : Path = args.out
+    out: Path = args.out
 
     if out is not None:
         if not out.exists():
@@ -126,7 +133,6 @@ if __name__ == "__main__":
     else:
         eprint("Warning: Running without dumping of results!")
 
-
     results: Counter[ResultKind, int] = Counter({})
 
     for seed in seeds:
@@ -138,9 +144,8 @@ if __name__ == "__main__":
     runs_per_iter = args.rounds + 1
     runs_per_seed = args.iterations * runs_per_iter
     num_seeds = len(seeds)
-    total_runs = num_seeds * runs_per_seed
 
-    print(f'Runs per iteration: {runs_per_iter}')
-    print(f'Runs per seed: {runs_per_seed}')
+    print(f'Runs per iteration (approx): {runs_per_iter}')
+    print(f'Runs per seed (approx): {runs_per_seed}')
     print(f'Seeds: {num_seeds}')
-    print(f'Total runs: {total_runs}')
+    print(f'Total runs: {results.total()}')
