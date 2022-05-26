@@ -135,8 +135,11 @@ if __name__ == "__main__":
 
     results: Counter[ResultKind, int] = Counter({})
 
-    for seed in seeds:
-        results += run(args.gen, cmd, seed, args.rounds, args.iterations, out)
+    try:
+        for seed in seeds:
+            results += run(args.gen, cmd, seed, args.rounds, args.iterations, out)
+    except KeyboardInterrupt:
+        print("Received keyboard interrupt")
 
     for kind in list(ResultKind):
         print(f'{kind.name}: {results.get(kind, 0)}')
