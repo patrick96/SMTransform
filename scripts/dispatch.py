@@ -130,6 +130,6 @@ if __name__ == "__main__":
             my_env.update(env)
 
             eprint(' '.join(cmd))
-            subprocess.run(cmd, check=True, env=my_env)
+            subprocess.run(cmd, check=True, env=my_env, stdout=sys.stderr)
 
             num += 1
