@@ -6,6 +6,8 @@ This was written with the paths and assumptions of the cluster where the
 experiments were run.
 """
 
+import itertools
+import argparse
 import os
 import sys
 import subprocess
@@ -19,14 +21,13 @@ def eprint(*args, **kwargs):
 REPO_ROOT = Path(__file__).parent.parent.relative_to(Path.cwd())
 
 WRAPPER = REPO_ROOT / "scripts" / "wrapper.py"
-SEEDS = REPO_ROOT / "SMTLIB" / "QF_NIA-seeds"
 GEN = REPO_ROOT / "target" / "release" / "smtransform"
 
 HOME = Path.home()
 SOLVERS = HOME / 'smtransform' / 'solvers'
 
 
-def get_bsub(num: int, cmd: [str]) -> (str, [str]):
+def get_bsub(num: int, seeds: Path, cmd: [str]) -> (str, [str]):
     jobname = f'job{num}'
     return jobname, [
         'bsub',
@@ -35,7 +36,7 @@ def get_bsub(num: int, cmd: [str]) -> (str, [str]):
         '-oo', f'out/out-{num}.log',
         '-eo', f'out/err-{num}.log',
         str(WRAPPER),
-        '--seeds', str(SEEDS),
+        '--seeds', str(seeds),
         '--out', f'out/{jobname}',
         '--gen', str(GEN),
         '--iterations', '20',
@@ -100,18 +101,30 @@ class CVC5Runner:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Dispatches jobs on a cluster')
+
+    parser.add_argument('--seeds',
+                        help='Folder with subfolders, each containing seed formulas',
+                        type=Path,
+                        required=True)
+    args = parser.parse_args()
+
     runners = [Z3Runner, Yices2Runner, CVC5Runner]
 
     num = 0
 
-    for runner in runners:
-        for asan in [True, False]:
+    seeds: Path = args.seeds
+
+    for (runner, asan) in itertools.product(runners, [True, False]):
+        for seed_folder in sorted(seeds.iterdir()):
+            if not seed_folder.is_dir():
+                continue
 
             (env, solver_cmd) = runner.get_cmd(asan)
-            (name, cmd) = get_bsub(num, solver_cmd)
+            (name, cmd) = get_bsub(num, seed_folder, solver_cmd)
 
             print(
-                f'{name}: {runner.__name__} {"ASAN" if asan else "RELEASE"}, env: {env}')
+                f'{name}: {runner.__name__} {"ASAN" if asan else "RELEASE"}, {seed_folder}, env: {env}')
 
             my_env = os.environ.copy()
             my_env.update(env)
