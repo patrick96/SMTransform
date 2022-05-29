@@ -23,7 +23,8 @@ def dump(result: RunResult, out: Path):
 
     kind = result.get_kind()
 
-    if kind == ResultKind.Success:
+    # Don't drop success or timeout results (they're not interesting)
+    if kind in [ResultKind.Success, ResultKind.Timeout]:
         return
 
     dir = out / kind.name
