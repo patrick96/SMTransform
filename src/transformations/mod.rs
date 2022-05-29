@@ -23,6 +23,7 @@ pub trait Transformation {
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum Transformations {
     Fusion,
+    Fusion2,
     VariableReplacement,
     ConstantReplacement,
 }
@@ -30,7 +31,10 @@ pub enum Transformations {
 impl Transformations {
     pub fn all() -> &'static [Self] {
         use Transformations::*;
-        &[Fusion, VariableReplacement, ConstantReplacement]
+        /*
+         * Only transformations in this array are applied
+         */
+        &[Fusion, Fusion2, VariableReplacement, ConstantReplacement]
     }
 
     pub fn is_all_transformations(t: &[Transformations]) -> bool {
@@ -60,6 +64,7 @@ impl Transformations {
             Fusion => Ok(Box::new(fusion::Fusion::new(rng, f)?)),
             VariableReplacement => Ok(Box::new(var_replacer::VarReplacer::new(rng, f)?)),
             ConstantReplacement => Ok(Box::new(const_replacer::ConstReplacer::new(rng, f)?)),
+            Fusion2 => Ok(Box::new(fusion::Fusion2::new(rng, f)?)),
         }
     }
 }

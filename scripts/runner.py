@@ -277,6 +277,5 @@ if __name__ == "__main__":
     for line in fileinput.input(['-']):
         result = on_input(cmd, line)
 
-
-        if not result.is_success() or result.is_unsound() or result.stderr:
+        if not result.is_success() and not result.is_timeout():
             print(result.to_json())

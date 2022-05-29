@@ -12,7 +12,10 @@ mod parser;
 mod transformations;
 mod var_generator;
 
-use crate::{formula::{Formula, ResultKind}, transformations::Transformations};
+use crate::{
+    formula::{Formula, ResultKind},
+    transformations::Transformations,
+};
 use serde_json::json;
 
 #[derive(Parser, Debug)]
@@ -60,7 +63,7 @@ fn main() -> Result<(), String> {
     let formula: Formula = script.try_into()?;
 
     if formula.status != ResultKind::SAT {
-        return Err(format!("Input formula has status {}", formula.status))
+        return Err(format!("Input formula has status {}", formula.status));
     }
 
     let mut current = formula;
