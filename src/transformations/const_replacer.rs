@@ -19,7 +19,7 @@ impl ConstReplacer {
             .into_iter()
             .filter_map(|(e, t)| match t {
                 /*
-                 * NOTE: constants don't imply a sort. We just assume that numerals are Int and
+                 * TODO: constants don't imply a sort. We just assume that numerals are Int and
                  * strings are String. This may produce invalid formulas if a numeral is used as a
                  * Real.
                  */

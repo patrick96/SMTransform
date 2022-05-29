@@ -56,6 +56,79 @@ impl Expr {
             exprs.into_iter().map(Expr::to_boxed).collect(),
         )
     }
+
+    /**
+     * Replaces all local variables with fresh names.
+     *
+     * Useful when cloning an expression and wanting to preserve uniqueness of variable names.
+     */
+    pub fn replace_locals(self, gen: &mut VariableGenerator) -> Self {
+        self.do_replace_locals(gen, BTreeMap::new())
+    }
+
+    fn boxed_replace_locals(
+        expr: BoxedExpr,
+        gen: &mut VariableGenerator,
+        replacements: BTreeMap<String, String>,
+    ) -> BoxedExpr {
+        Expr::into_inner(expr)
+            .do_replace_locals(gen, replacements)
+            .to_boxed()
+    }
+
+    fn do_replace_locals(
+        mut self,
+        gen: &mut VariableGenerator,
+        mut replacements: BTreeMap<String, String>,
+    ) -> Self {
+        use Expr::*;
+
+        match self {
+            Const(_) => self,
+            Id(_) => self,
+            Var(ref mut var) => {
+                if !var.global {
+                    var.name = replacements.get(&var.name).unwrap_or(&var.name).clone();
+                }
+
+                self
+            }
+            Op(op, exprs) => Op(
+                op,
+                exprs
+                    .into_iter()
+                    .map(|e| Expr::boxed_replace_locals(e, gen, replacements.clone()))
+                    .collect(),
+            ),
+            Let(mut bindings, subexpr) => {
+                for (ref mut name, _) in &mut bindings {
+                    let new_name = gen.generate();
+                    // Insert type and name replacement
+                    replacements.insert(name.s.clone(), new_name.clone());
+                    *name = Symbol::new(new_name);
+                }
+
+                Let(
+                    bindings,
+                    Expr::boxed_replace_locals(subexpr, gen, replacements),
+                )
+            }
+            Quant(q, mut bindings, subexpr) => {
+                for (ref mut name, _) in &mut bindings {
+                    let new_name = gen.generate();
+                    // Insert type and name replacement
+                    replacements.insert(name.s.clone(), new_name.clone());
+                    *name = Symbol::new(new_name);
+                }
+
+                Quant(
+                    q,
+                    bindings,
+                    Expr::boxed_replace_locals(subexpr, gen, replacements),
+                )
+            }
+        }
+    }
 }
 
 impl Term {
@@ -288,6 +361,7 @@ impl Visitor for ConstCollector {
  * Assumptions:
  * * `(set-info :status ...)` is present
  * * Sequence of assertions without assertion stacks followed by a `check-sat` query
+ * * All variable names are unique (no local variables with the same name)
  */
 #[derive(Clone, Debug)]
 pub struct Formula {
