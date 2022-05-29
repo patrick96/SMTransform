@@ -335,12 +335,28 @@ impl Display for SpecConstant {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Quantifier {
+    Forall,
+    Exists,
+}
+
+impl Display for Quantifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Quantifier::Forall => write!(f, "forall"),
+            Quantifier::Exists => write!(f, "exists"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Term {
     SpecConstant(SpecConstant),
     Identifier(Identifier),
     Op(Identifier, Vec<Term>),
     Let(Vec<(Symbol, Term)>, Box<Term>),
+    Quant(Quantifier, Vec<(Symbol, Sort)>, Box<Term>),
 }
 
 impl Display for Term {
@@ -364,6 +380,18 @@ impl Display for Term {
 
                 for (sym, term) in bindings {
                     write!(f, "({} {})", sym, term)?;
+                }
+
+                write!(f, ") {})", *subterm)
+            }
+            Quant(q, vars, subterm) => {
+                write!(f, "({} (", q)?;
+
+                for (pos, (sym, sort)) in vars.iter().enumerate() {
+                    if pos > 0 {
+                        write!(f, " ")?;
+                    }
+                    write!(f, "({} {})", sym, sort)?;
                 }
 
                 write!(f, ") {})", *subterm)
@@ -693,6 +721,35 @@ impl Listener {
             }
 
             Ok(Term::Let(
+                bindings,
+                Box::new(self.term(&*ctx.term(0).unwrap(), local_vars)?),
+            ))
+        } else if ctx.GRW_Forall().is_some() || ctx.GRW_Exists().is_some() {
+            let mut bindings = ctx
+                .sorted_var_all()
+                .into_iter()
+                .map(|sorted_var| self.sorted_var(&*sorted_var))
+                .collect::<VisitorResult<Vec<(Symbol, Sort)>>>()?;
+
+            for (ref mut name, _) in &mut bindings {
+                let new_name = self.gen.generate();
+                // Insert type and name replacement
+                local_vars.insert(name.clone(), (new_name.clone(), Type::Unknown));
+
+                *name = Symbol::new(new_name);
+            }
+
+            let q;
+
+            if ctx.GRW_Forall().is_some() {
+                q = Quantifier::Forall;
+            } else {
+                assert!(ctx.GRW_Exists().is_some());
+                q = Quantifier::Exists;
+            }
+
+            Ok(Term::Quant(
+                q,
                 bindings,
                 Box::new(self.term(&*ctx.term(0).unwrap(), local_vars)?),
             ))

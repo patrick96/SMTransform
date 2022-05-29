@@ -2,7 +2,7 @@ use crate::{parser::*, var_generator::VariableGenerator};
 
 use std::{cell::RefCell, collections::BTreeMap, ops::Deref, rc::Rc};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResultKind {
     SAT,
     UNSAT,
@@ -30,6 +30,7 @@ pub enum Expr {
     Var(Var),
     Op(Identifier, Vec<BoxedExpr>),
     Let(Vec<(Symbol, BoxedExpr)>, BoxedExpr),
+    Quant(Quantifier, Vec<(Symbol, Sort)>, BoxedExpr),
 }
 
 impl Expr {
@@ -78,6 +79,7 @@ impl Clone for Expr {
                     .collect(),
                 Expr::clone_rc(subterm),
             ),
+            Quant(q, bindings, subterm) => Quant(*q, bindings.clone(), Expr::clone_rc(subterm)),
         }
     }
 }
@@ -102,6 +104,9 @@ impl From<Expr> for Term {
                     .collect(),
                 Box::new(Expr::into_inner(subterm).into()),
             ),
+            Expr::Quant(q, bindings, subterm) => {
+                Term::Quant(q, bindings, Box::new(Expr::into_inner(subterm).into()))
+            }
         }
     }
 }
@@ -121,6 +126,7 @@ impl From<Term> for Expr {
                     .collect(),
                 (*subterm).to_boxed(),
             ),
+            Term::Quant(q, bindings, subterm) => Expr::Quant(q, bindings, (*subterm).to_boxed()),
         }
     }
 }
@@ -161,6 +167,7 @@ trait Visitor {
             Var(var) => self.visit_variable(expr, var),
             Op(op, exprs) => self.visit_op(expr, op, exprs),
             Let(bindings, subexpr) => self.visit_let(expr, bindings, subexpr),
+            Quant(q, bindings, subexpr) => self.visit_quantifier(expr, *q, bindings, subexpr),
         }
     }
 
@@ -174,6 +181,16 @@ trait Visitor {
             self.visit_expr(expr)
         }
 
+        self.visit_expr(subexpr)
+    }
+
+    fn visit_quantifier(
+        &mut self,
+        _e: &BoxedExpr,
+        _q: Quantifier,
+        _bindings: &Vec<(Symbol, Sort)>,
+        subexpr: &BoxedExpr,
+    ) {
         self.visit_expr(subexpr)
     }
 

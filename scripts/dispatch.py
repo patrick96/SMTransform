@@ -144,7 +144,7 @@ if __name__ == "__main__":
             sys.exit(1)
 
     if job_numbers:
-        eprint(f'Only running jobs: {job_numbers}')
+        eprint(f'Only running jobs: {list(job_numbers)}')
     else:
         eprint("Running all jobs")
 
