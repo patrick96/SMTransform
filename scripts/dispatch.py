@@ -107,6 +107,18 @@ if __name__ == "__main__":
                         help='Folder with subfolders, each containing seed formulas',
                         type=Path,
                         required=True)
+
+    parser.add_argument('-n', '--dry-run',
+                        help="Don't submit any jobs",
+                        action=argparse.BooleanOptionalAction,
+                        required=False)
+
+    parser.add_argument('--nums',
+                        help="Only run jobs with the given numbers (can be ranges as well)",
+                        nargs='+',
+                        type=str,
+                        required=False)
+
     args = parser.parse_args()
 
     runners = [Z3Runner, Yices2Runner, CVC5Runner]
@@ -114,22 +126,48 @@ if __name__ == "__main__":
     num = 0
 
     seeds: Path = args.seeds
+    dry_run: bool = args.dry_run
+
+    job_numbers = set()
+
+    for nums_str in args.nums:
+        split = nums_str.split(',')
+
+        if len(split) == 1:
+            job_numbers.add(int(split[0]))
+        elif len(split) == 2:
+            job_numbers |= set(range(int(split[0]), int(split[1]) + 1))
+        elif len(split) == 3:
+            job_numbers |= set(range(int(split[0]), int(split[1]) + 1, int(split[2])))
+        else:
+            eprint(f'"{nums_str}" is not a valid range')
+            sys.exit(1)
+
+    if job_numbers:
+        eprint(f'Only running jobs: {job_numbers}')
+    else:
+        eprint("Running all jobs")
+
+    if dry_run:
+        eprint("Dry-run mode")
 
     for (runner, asan) in itertools.product(runners, [True, False]):
         for seed_folder in sorted(seeds.iterdir()):
             if not seed_folder.is_dir():
                 continue
 
-            (env, solver_cmd) = runner.get_cmd(asan)
-            (name, cmd) = get_bsub(num, seed_folder, solver_cmd)
+            if not job_numbers or num in job_numbers:
+                (env, solver_cmd) = runner.get_cmd(asan)
+                (name, cmd) = get_bsub(num, seed_folder, solver_cmd)
 
-            print(
-                f'{name}: {runner.__name__} {"ASAN" if asan else "RELEASE"}, {seed_folder}, env: {env}')
+                print(
+                    f'{name}: {runner.__name__} {"ASAN" if asan else "RELEASE"}, {seed_folder}, env: {env}')
 
-            my_env = os.environ.copy()
-            my_env.update(env)
+                my_env = os.environ.copy()
+                my_env.update(env)
 
-            eprint(' '.join(cmd))
-            subprocess.run(cmd, check=True, env=my_env, stdout=sys.stderr)
+                print(' '.join(cmd))
+                if not dry_run:
+                    subprocess.run(cmd, check=True, env=my_env, stdout=sys.stderr)
 
             num += 1
