@@ -92,6 +92,8 @@ fn main() -> Result<(), String> {
                     // Apply the transformation. Errors here are fatal
                     current = inst.run(&mut prng, current)?;
 
+                    eprintln!("{:?}", transformation);
+
                     println!("{}", dump_formula(&current, round, &json_base, args.json));
                     break;
                 }

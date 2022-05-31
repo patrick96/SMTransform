@@ -101,6 +101,16 @@ impl Expr {
                     .collect(),
             ),
             Let(mut bindings, subexpr) => {
+                bindings = bindings
+                    .into_iter()
+                    .map(|(name, expr)| {
+                        (
+                            name,
+                            Expr::boxed_replace_locals(expr, gen, replacements.clone()),
+                        )
+                    })
+                    .collect();
+
                 for (ref mut name, _) in &mut bindings {
                     let new_name = gen.generate();
                     // Insert type and name replacement

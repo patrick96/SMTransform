@@ -50,7 +50,8 @@ impl Symbol {
     pub fn new(s: String) -> Self {
         lazy_static! {
             static ref RE: Regex =
-                Regex::new(r"^[a-zA-Z+=/*%?!$\-_~&^<>@.](\d|[a-zA-Z+=/*%?!$\-_~&^<>@.])*$").unwrap();
+                Regex::new(r"^[a-zA-Z+=/*%?!$\-_~&^<>@.](\d|[a-zA-Z+=/*%?!$\-_~&^<>@.])*$")
+                    .unwrap();
         }
 
         if RE.is_match(s.as_str()) {
