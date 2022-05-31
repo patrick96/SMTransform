@@ -48,6 +48,10 @@ def get_bsub(num: int, seeds: Path, cmd: [str]) -> (str, [str]):
 class Z3Runner:
 
     @staticmethod
+    def get_name() -> str:
+        return "z3"
+
+    @staticmethod
     def get_exec(asan: bool) -> Path:
         folder_name = f'z3-{"asan-" if asan else ""}8c95dff33'
         return SOLVERS / folder_name / 'usr' / 'local' / 'bin' / 'z3'
@@ -58,6 +62,10 @@ class Z3Runner:
 
 
 class Yices2Runner:
+
+    @staticmethod
+    def get_name() -> str:
+        return "yices2"
 
     @staticmethod
     def get_base(asan: bool) -> Path:
@@ -80,6 +88,10 @@ class Yices2Runner:
 
 
 class CVC5Runner:
+
+    @staticmethod
+    def get_name() -> str:
+        return "cvc5"
 
     @staticmethod
     def get_base(asan: bool) -> Path:
@@ -119,6 +131,11 @@ if __name__ == "__main__":
                         type=str,
                         required=False)
 
+    parser.add_argument('--exclude-solvers',
+                        nargs='+',
+                        type=str,
+                        required=False)
+
     args = parser.parse_args()
 
     runners = [Z3Runner, Yices2Runner, CVC5Runner]
@@ -130,7 +147,7 @@ if __name__ == "__main__":
 
     job_numbers = set()
 
-    for nums_str in args.nums:
+    for nums_str in (args.nums or []):
         split = nums_str.split(',')
 
         if len(split) == 1:
@@ -147,6 +164,11 @@ if __name__ == "__main__":
         eprint(f'Only running jobs: {list(job_numbers)}')
     else:
         eprint("Running all jobs")
+
+    if args.exclude_solvers:
+        runners = [runner for runner in runners if runner.get_name() not in args.exclude_solvers]
+
+    eprint(f'Running solvers: {list(map(lambda r: r.get_name(), runners))}')
 
     if dry_run:
         eprint("Dry-run mode")
