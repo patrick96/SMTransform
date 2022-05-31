@@ -50,7 +50,7 @@ impl Symbol {
     pub fn new(s: String) -> Self {
         lazy_static! {
             static ref RE: Regex =
-                Regex::new(r"^[a-zA-Z+=/*%?!$-_~&^<>@.](\d|[a-zA-Z+=/*%?!$-_~&^<>@.])*$").unwrap();
+                Regex::new(r"^[a-zA-Z+=/*%?!$\-_~&^<>@.](\d|[a-zA-Z+=/*%?!$\-_~&^<>@.])*$").unwrap();
         }
 
         if RE.is_match(s.as_str()) {
@@ -64,6 +64,7 @@ impl Symbol {
         !self.quoted
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -80,6 +81,9 @@ mod tests {
     #[test]
     fn test_quoted_symbol() {
         assert!(!Symbol::new("foo bar".to_string()).is_simple());
+        assert!(!Symbol::new("(".to_string()).is_simple());
+        assert!(!Symbol::new("old(~a10~0".to_string()).is_simple());
+        assert!(!Symbol::new("old(~a10~0)".to_string()).is_simple());
     }
 }
 
