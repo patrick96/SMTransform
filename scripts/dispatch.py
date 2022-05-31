@@ -136,11 +136,17 @@ if __name__ == "__main__":
                         type=str,
                         required=False)
 
+    parser.add_argument('--start-num',
+                        help="Start numbering jobs with this number",
+                        type=int,
+                        default=0,
+                        required=False)
+
     args = parser.parse_args()
 
     runners = [Z3Runner, Yices2Runner, CVC5Runner]
 
-    num = 0
+    num = args.start_num
 
     seeds: Path = args.seeds
     dry_run: bool = args.dry_run
