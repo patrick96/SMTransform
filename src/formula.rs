@@ -225,7 +225,7 @@ impl From<Var> for Expr {
     }
 }
 
-trait Visitor {
+pub trait Visitor {
     fn run(&mut self, f: &Formula) {
         for expr in &f.constraints {
             self.visit_expr(expr);

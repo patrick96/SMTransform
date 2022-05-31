@@ -26,6 +26,7 @@ pub enum Transformations {
     Fusion,
     Fusion2,
     AssertExpandIte,
+    AssertExpandBinary,
     VariableReplacement,
     ConstantReplacement,
 }
@@ -40,6 +41,7 @@ impl Transformations {
             (Fusion, 10),
             (Fusion2, 10),
             (AssertExpandIte, 2),
+            (AssertExpandBinary, 2),
             (VariableReplacement, 3),
             (ConstantReplacement, 1),
         ]
@@ -81,6 +83,7 @@ impl Transformations {
             ConstantReplacement => Ok(Box::new(const_replacer::ConstReplacer::new(rng, f)?)),
             Fusion2 => Ok(Box::new(fusion::Fusion2::new(rng, f)?)),
             AssertExpandIte => Ok(Box::new(assert_expand::AssertExpandIte::new(rng, f)?)),
+            AssertExpandBinary => Ok(Box::new(assert_expand::AssertExpandBinary::new(rng, f)?)),
         }
     }
 }
