@@ -25,13 +25,20 @@ struct Args {
     #[clap(long, default_value_t = 0)]
     seed: u64,
 
+    /// How many formulas to generate
     #[clap(long, default_value_t = 1)]
     rounds: u64,
 
+    /// Print generated formulas wrapped in JSON object
     #[clap(long)]
     json: bool,
 
+    /// File containing seed formula in the SMT-LIB2 format
     file: String,
+
+    /// Also print the seed formula
+    #[clap(long)]
+    print_original: bool,
 }
 
 fn dump_formula(f: &Formula, round: u64, base: &serde_json::Value, json: bool) -> String {
@@ -58,7 +65,7 @@ fn main() -> Result<(), String> {
             "seed": args.seed,
     });
 
-    let contents = fs::read_to_string(args.file).unwrap();
+    let contents = fs::read_to_string(args.file).map_err(|err| err.to_string())?;
     let script = crate::parser::parse(contents.as_str())?;
     let formula: Formula = script.try_into()?;
 
@@ -70,7 +77,9 @@ fn main() -> Result<(), String> {
 
     let mut prng = Pcg32::seed_from_u64(args.seed);
 
-    println!("{}", dump_formula(&current, 0, &json_base, args.json));
+    if args.print_original {
+        println!("{}", dump_formula(&current, 0, &json_base, args.json));
+    }
 
     /*
      * Incrementally apply one transformation each round
