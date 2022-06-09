@@ -118,3 +118,13 @@ Runs per seed (approx): 220
 Seeds: 10
 Total runs: 2200
 ```
+
+## Limitations / TODOs
+
+* There is no type checker, so we don't really know the type of a term unless it is a variable with known type.
+    * The `ConstantReplacement` transformation currently assumes `NUMERAL` is
+    of sort `Int`, which would be unsound if the numeral was actually used as a
+    `Real`.
+    * The `AssertExpandBinary` transformations assumes that function names from
+    the standard SMT-LIB theories are not overloaded (e.g. `and`, `>=`, etc.)
+    because it needs to assume the function signature.
